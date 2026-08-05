@@ -1,0 +1,8 @@
+*.o
+/astrolog
+/ast80src.zip
+/chart.svg
+/chart.png
+/build/
+/dist/
+.DS_Store

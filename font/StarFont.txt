@@ -1,0 +1,46 @@
+As of September 29, 2010, this entire package is released to the public
+domain by its authors, Matthew Skala and Anthony I.P. Owen.
+
+When I (Matthew Skala) first packaged these fonts for LaTeX in 2004 or so, I
+used two TrueType files that at the time were widely distributed on the Web
+by people who apparently thought they were intended for free public use. 
+However, the font files contain embedded notices crediting them to Anthony
+I.P. Owen, copyright 1993, and giving a telephone number and postal address. 
+Efforts to contact the designer with that (decade-old even at the time)
+information were unsuccessful; the best I could do was talk to one of his
+friends, who told me he thought Anthony Owen had intended to release the
+fonts to the public.  CTAN didn't want to distribute the fonts on that basis
+because it was not clear they could do so legally, so from 2006 CTAN
+distributed a stripped-down version of this package, including the LaTeX
+packaging code (which is mine to release) but not the fonts themselves.
+Users were free to go looking for the fonts or equivalents on non-CTAN sites
+such as my own.  I released my own contributions to the public domain to
+avoid further complicating the situation.
+
+Today I received email from Anthony Owen confirming that he has released the
+fonts to the public domain and we are free to distribute them.  I'm grateful
+for his generosity in doing this.  The email is reproduced below, minus his
+email address because I'm not sure he wants that widely published.
+
+Matthew Skala <mskala@ansuz.sooke.bc.ca>
+
+From -------@yahoo.com Wed Sep 29 11:29:13 2010
+Date: Wed, 29 Sep 2010 08:21:05 -0700 (PDT)
+From: Anthony Owen <-------@yahoo.com>
+To: mskala@ansuz.sooke.bc.ca
+Subject: Starfont astrological font
+
+Dear Mathew,
+
+By sheer chance (actually, I googled my name and came up with your pdf document 'A
+The starfont package for L TEX') I discovered your work on adapting the font 'Starfont serif' for use in L Tex).
+
+I am the developer/designer of the font, andwould like to confirm that I have now placed the font (and its sans serif version) in the public domain and that there are no licensing restrictions applying to the fonts. If you wish to distribute the fonts (as is, and with no warranty implied) you may do so with my full permission (not that that is necessary!).
+
+If you require any further information, please do not hesitate to contact me at this e-mail address.
+
+Yours sincerely,
+Anthony I.P. Owen
+
+
+      

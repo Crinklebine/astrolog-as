@@ -1,0 +1,2138 @@
+/*
+** Astrolog (Version 8.00) File: xgeneral.cpp
+**
+** IMPORTANT NOTICE: Astrolog and all chart display routines and anything
+** not enumerated below used in this program are Copyright (C) 1991-2026 by
+** Walter D. Pullen (Astara@msn.com, http://www.astrolog.org/astrolog.htm).
+** Permission is granted to freely use, modify, and distribute these
+** routines provided these credits and notices remain unmodified with any
+** altered or distributed versions of the program.
+**
+** The main ephemeris databases and calculation routines are from the
+** library SWISS EPHEMERIS and are programmed and copyright 1997-2008 by
+** Astrodienst AG. Use of that source code is subject to license for Swiss
+** Ephemeris Free Edition at https://www.astro.com/swisseph/swephinfo_e.htm.
+** This copyright notice must not be changed or removed by any user of this
+** program.
+**
+** Additional ephemeris databases and formulas are from the calculation
+** routines in the program PLACALC and are programmed and Copyright (C)
+** 1989,1991,1993 by Astrodienst AG and Alois Treindl (alois@astro.ch). The
+** use of that source code is subject to regulations made by Astrodienst
+** Zurich, and the code is not in the public domain. This copyright notice
+** must not be changed or removed by any user of this program.
+**
+** The original planetary calculation routines used in this program have
+** been copyrighted and the initial core of this program was mostly a
+** conversion to C of the routines created by James Neely as listed in
+** 'Manual of Computer Programming for Astrologers', by Michael Erlewine,
+** available from Matrix Software.
+**
+** Atlas composed using data from https://www.geonames.org/ licensed under a
+** Creative Commons Attribution 4.0 License. Time zone changes composed using
+** public domain TZ database: https://data.iana.org/time-zones/tz-link.html
+**
+** The PostScript code within the core graphics routines are programmed
+** and Copyright (C) 1992-1993 by Brian D. Willoughby (brianw@sounds.wa.com).
+**
+** More formally: This program is free software; you can redistribute it
+** and/or modify it under the terms of the GNU General Public License as
+** published by the Free Software Foundation; either version 2 of the
+** License, or (at your option) any later version. This program is
+** distributed in the hope that it will be useful and inspiring, but
+** WITHOUT ANY WARRANTY; without even the implied warranty of
+** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+** General Public License for more details, a copy of which is in the
+** LICENSE.HTM file included with Astrolog, and at http://www.gnu.org
+**
+** Initial programming 8/28-30/1991.
+** X Window graphics initially programmed 10/23-29/1991.
+** PostScript graphics initially programmed 11/29-30/1992.
+** Last code change made 5/28/2026.
+*/
+
+#include "astrolog.h"
+
+
+#ifdef GRAPH
+/*
+******************************************************************************
+** Core Graphic Procedures.
+******************************************************************************
+*/
+
+// Set the current color to use in drawing on the screen or bitmap array.
+
+void DrawColor(KI ki)
+{
+  KV kv;
+#ifdef WINANY
+  HPEN hpenPrev;
+  int n;
+#endif
+
+  kv = KvFromKi(ki);
+  if (gi.fFile) {
+#ifdef PS
+    if (gs.ft == ftPS) {
+      if (gi.kvCur != kv) {
+        PsStrokeForce();      // Render existing path with current color
+        fprintf(gi.file, "%.2f %.2f %.2f c\n",
+          (real)RgbR(kv)/255.0, (real)RgbG(kv)/255.0, (real)RgbB(kv)/255.0);
+      }
+    }
+#endif
+#ifdef META
+    if (gs.ft == ftWmf) {
+      if (!FBetween(ki, 0, cColor-1))
+        ki = KiFromKv(KvFromKi(ki), fFalse);
+      gi.kiLineDes = ki;
+    }
+#endif
+#ifdef SVG
+    if (gs.ft == ftSVG)
+      gi.kiSvgDes = ki;
+#endif
+  }
+#ifdef X11
+  else {
+    if (ki < 0)
+      ki = KiFromKv(-ki, fTrue);
+    XSetForeground(gi.disp, gi.gc, rgbind[ki]);
+  }
+#endif
+#ifdef WINANY
+  else {
+    if (gi.kvCur != kv) {
+      hpenPrev = wi.hpen;
+      n = gi.nScaleT * (1 + (gs.fThick && wi.nScaleWin > 1));
+      n += gs.nThickAdjust;
+      if (n < 1)
+        n = 1;
+      wi.hpen = CreatePen(PS_SOLID, n, (COLORREF)kv);
+      SelectObject(wi.hdc, wi.hpen);
+      if (hpenPrev != (HPEN)NULL)
+        DeleteObject(hpenPrev);
+    }
+  }
+#endif
+  gi.kiCur = ki;
+  gi.kvCur = kv;
+}
+
+
+// Set the current line thickness to use when drawing graphics charts.
+
+void DrawThick(flag fThick)
+{
+#ifdef WIN
+  int kvCur;
+#endif
+
+  if (fThick == gs.fThick)
+    return;
+  gs.fThick = fThick;
+#ifdef WIN
+  if (!gi.fFile && wi.nScaleWin > 1) {
+    // For Windows, reset pen width to reflect new thickness.
+    kvCur = gi.kvCur;
+    gi.kvCur = -1;
+    DrawColor(-kvCur);
+  }
+#endif
+}
+
+
+#ifdef WIN
+// Adjust coordinates on a Windows bitmap for antialiasing, such that when
+// wide lines are zoomed down, they will align with and overlap the final
+// pixels (which looks better) instead of straddling them and looking fuzzy.
+// This is similar to the technique of font hinting.
+
+void AdjustCoordinates(int *px, int *py)
+{
+  int x, y;
+
+  if (!(wi.fSmoothZoom && !gi.fFile))
+    return;
+  x = *px; y = *py;
+  if (!gs.fThick) {
+    x = x / wi.nScaleWin * wi.nScaleWin + wi.nScaleWin/2;
+    y = y / wi.nScaleWin * wi.nScaleWin + wi.nScaleWin/2;
+  } else {
+    x = (x + wi.nScaleWin-1) / wi.nScaleWin * wi.nScaleWin;
+    y = (y + wi.nScaleWin-1) / wi.nScaleWin * wi.nScaleWin;
+  }
+  *px = x; *py = y;
+}
+#endif
+
+
+// Set a single point on the chart. This is the most basic graphic function
+// and is called by all the more complex routines. Based on what mode are
+// in, either set a cell in the bitmap array or a pixel on the window.
+
+void DrawPoint(int x, int y)
+{
+#ifdef META
+  int n;
+#endif
+#ifdef WINANY
+  int n2;
+#endif
+
+  // Don't set points outside the bounds of the bitmap array.
+  if (!FOnWin(x, y))
+    return;
+  if (gi.fFile) {
+    if (gs.ft == ftBmp) {
+      if (!gi.fBmp) {
+        BmSet(gi.bm, x, y, gi.kiCur);
+        if (gs.fThick) {
+          if (x+1 < gs.xWin)
+            BmSet(gi.bm, x+1, y, gi.kiCur);
+          if (y+1 < gs.yWin) {
+            BmSet(gi.bm, x, y+1, gi.kiCur);
+            if (x+1 < gs.xWin)
+              BmSet(gi.bm, x+1, y+1, gi.kiCur);
+          }
+        }
+      } else {
+        BmpSetXY(&gi.bmp, x, y, gi.kvCur);
+        if (gs.fThick) {
+          if (x+1 < gs.xWin)
+            BmpSetXY(&gi.bmp, x+1, y, gi.kvCur);
+          if (y+1 < gs.yWin) {
+            BmpSetXY(&gi.bmp, x, y+1, gi.kvCur);
+            if (x+1 < gs.xWin)
+              BmpSetXY(&gi.bmp, x+1, y+1, gi.kvCur);
+          }
+        }
+      }
+    }
+#ifdef PS
+    else if (gs.ft == ftPS) {
+      DrawColor(-(int)gi.kvCur);
+      PsLineCap(fTrue);
+      fprintf(gi.file, "%d %d d\n", x, y);
+      PsStroke(2);
+    }
+#endif
+#ifdef META
+    else if (gs.ft == ftWmf) {
+      gi.kiLineDes = gi.kiFillDes = gi.kiCur;
+      MetaSelect();
+      n = gi.nPenWid;
+      if (!gs.fThick) {
+        MetaEllipse(x-n, y-n, x+n*2, y+n*2);
+      } else {
+        MetaEllipse(x-n, y-n, x+n*3, y+n*3);
+      }
+    }
+#endif
+#ifdef SVG
+    else if (gs.ft == ftSVG) {
+      SvgSetColor();
+      fprintf(gi.file, "<circle r=\"1\" cx=\"%d\" cy=\"%d\"/>\n",
+        x, y);
+    }
+#endif
+#ifdef WIRE
+    else if (gs.ft == ftWire)
+      WirePoint(x, y, gi.zDefault);
+#endif
+  }
+#ifdef X11
+  else {
+    XDrawPoint(gi.disp, gi.pmap, gi.gc, x, y);
+    if (gs.fThick) {
+      XDrawPoint(gi.disp, gi.pmap, gi.gc, x+1, y);
+      XDrawPoint(gi.disp, gi.pmap, gi.gc, x, y+1);
+      XDrawPoint(gi.disp, gi.pmap, gi.gc, x+1, y+1);
+    }
+  }
+#endif
+#ifdef WINANY
+  else {
+    if (wi.nScaleWin > 1) {
+      n2 = (gi.nScaleT >> 2) * (1 + gs.fThick);
+      n2 = Max(n2, 1);
+      DrawCircle(x, y, n2, n2);
+    } else {
+      SetPixel(wi.hdc, x, y, (COLORREF)gi.kvCur);
+      if (gs.fThick) {
+        SetPixel(wi.hdc, x+1, y, (COLORREF)gi.kvCur);
+        SetPixel(wi.hdc, x, y+1, (COLORREF)gi.kvCur);
+        SetPixel(wi.hdc, x+1, y+1, (COLORREF)gi.kvCur);
+      }
+    }
+  }
+#endif
+}
+
+
+// Draw dot a little larger than just a single pixel at specified location.
+
+void DrawSpot(int x, int y)
+{
+  int n;
+
+  if (gi.fFile) {
+#ifdef PS
+    if (gs.ft == ftPS) {
+      PsLineWidth(gi.nLineWid*3);
+      DrawPoint(x, y);
+      PsLineWidth(gi.nLineWid/3);
+      return;
+    }
+#endif
+#ifdef META
+    if (gs.ft == ftWmf) {
+      gi.kiLineDes = gi.kiFillDes = gi.kiCur;
+      MetaSelect();
+      n = gi.nPenWid*(3 + gs.fThick);
+      MetaEllipse(x-gi.nPenWid*2, y-gi.nPenWid*2, x+n, y+n);
+      return;
+    }
+#endif
+#ifdef SVG
+    if (gs.ft == ftSVG) {
+      SvgSetColor();
+      fprintf(gi.file, "<circle r=\"%d\" cx=\"%d\" cy=\"%d\" fill=\"%s\"/>\n",
+        SVGMUL, x, y, SzColorHTML(gi.kiSvgAct));
+      return;
+    }
+#endif
+#ifdef WIRE
+    if (gs.ft == ftWire) {
+      WireLine(x-1, y,   0, x+1, y,   0);
+      WireLine(x,   y-1, 0, x,   y+1, 0);
+      return;
+    }
+#endif
+  }
+#ifdef WIN
+  else if (wi.nScaleWin > 1) {
+    n = gi.nScaleT + gs.fThick*(gi.nScaleT >> 2);
+    DrawCircle(x, y, n, n);
+    DrawPoint(x, y);
+    return;
+  }
+#endif
+  DrawPoint(x, y);
+  DrawPoint(x, y-1);
+  DrawPoint(x-1, y);
+  DrawPoint(x+1, y);
+  DrawPoint(x, y+1);
+}
+
+
+// Draw a filled in block, defined by the corners of its rectangle.
+
+void DrawBlock(int x1, int y1, int x2, int y2)
+{
+  int x, y;
+
+  if (gs.fThick) {
+    x2 += gi.nScaleT; y2 += gi.nScaleT;
+  }
+  if (gi.fFile) {
+    if (gs.ft == ftBmp) {
+      // Force the coordinates to be within the bounds of the bitmap array.
+      if (x1 < 0)
+        x1 = 0;
+      if (x2 >= gs.xWin)
+        x2 = gs.xWin-1;
+      if (y1 < 0)
+        y1 = 0;
+      else if (y2 >= gs.yWin)
+        y2 = gs.yWin-1;
+      // For bitmap, just fill in the array.
+      if (!gi.fBmp) {
+        for (y = y1; y <= y2; y++)
+          for (x = x1; x <= x2; x++)
+            BmSet(gi.bm, x, y, gi.kiCur);
+      } else {
+        for (y = y1; y <= y2; y++)
+          for (x = x1; x <= x2; x++)
+            BmpSetXY(&gi.bmp, x, y, gi.kvCur);
+      }
+    }
+#ifdef PS
+    else if (gs.ft == ftPS) {
+      DrawColor(gi.kiCur);
+      fprintf(gi.file, "%d %d %d %d rf\n",
+        Max(x1-gi.nPenWid/4, 0), Max(y1-gi.nPenWid/4, 0),
+        x2-x1+gi.nPenWid/4, y2-y1+gi.nPenWid/4);
+    }
+#endif
+#ifdef META
+    else if (gs.ft == ftWmf) {
+      gi.kiFillDes = gi.kiCur;
+      MetaSelect();
+      MetaRectangle(x1-gi.nPenWid, y1-gi.nPenWid,
+        x2+gi.nPenWid, y2+gi.nPenWid);
+    }
+#endif
+#ifdef SVG
+    else if (gs.ft == ftSVG) {
+      SvgSetColor();
+      fprintf(gi.file, "<rect width=\"%d\" height=\"%d\" x=\"%d\" y=\"%d\" "
+        "fill=\"%s\"/>\n", x2-x1+1, y2-y1+1, x1, y1, SzColorHTML(gi.kiSvgAct));
+    }
+#endif
+#ifdef WIRE
+    else if (gs.ft == ftWire) {
+      if (x1 == x2 || y1 == y2)
+        WireLine(x1, y1, 0, x2, y2, 0);
+    }
+#endif
+  }
+#ifdef X11
+  else
+    XFillRectangle(gi.disp, gi.pmap, gi.gc, x1, y1, x2-x1+1, y2-y1+1);
+#endif
+#ifdef WINANY
+  else {
+    wi.hbrush = CreateSolidBrush((COLORREF)gi.kvCur);
+    SelectObject(wi.hdc, wi.hbrush);
+#ifdef WIN
+    if (wi.fSmoothZoom && !gi.fFile) {
+      // Snap to nearest result pixel when antialiasing on.
+      x1 = x1 / wi.nScaleWin * wi.nScaleWin;
+      y1 = y1 / wi.nScaleWin * wi.nScaleWin;
+      x2 = x2 / wi.nScaleWin * wi.nScaleWin;
+      y2 = y2 / wi.nScaleWin * wi.nScaleWin;
+    }
+#endif
+    PatBlt(wi.hdc, x1, y1, x2-x1 + gi.nScaleT, y2-y1 + gi.nScaleT, PATCOPY);
+    SelectObject(wi.hdc, GetStockObject(NULL_BRUSH));
+    DeleteObject(wi.hbrush);
+  }
+#endif // WINANY
+}
+
+
+// Draw a rectangle on the screen with specified thickness. This is just like
+// DrawBlock() except only draws the edges of the area.
+
+void DrawBox(int x1, int y1, int x2, int y2, int xsiz, int ysiz)
+{
+#ifdef META
+  if (gs.ft == ftWmf)
+    // For thin boxes in metafiles, can just output one rectangle record
+    // instead of drawing each side separately as have to do otherwise.
+    if (xsiz <= 1 && ysiz <= 1) {
+      gi.kiFillDes = cColor;         // Specify a hollow fill brush.
+      MetaSelect();
+      MetaRectangle(x1, y1, x2, y2);
+      return;
+    }
+#endif
+#ifdef WIRE
+  if (gs.ft == ftWire) {
+    DrawLine(x1, y1, x2, y1);
+    DrawLine(x1, y1, x1, y2);
+    DrawLine(x2, y1, x2, y2);
+    DrawLine(x1, y2, x2, y2);
+    return;
+  }
+#endif
+  DrawBlock(x1, y1, x2, y1 + ysiz - 1);
+  DrawBlock(x1, y1 + ysiz, x1 + xsiz - 1, y2 - ysiz);
+  DrawBlock(x2 - xsiz + 1, y1 + ysiz, x2, y2 - ysiz);
+  DrawBlock(x1, y2 - ysiz + 1, x2, y2);
+}
+
+
+#ifdef EXPRESS
+// Given a specific character, coordinates, font index, character scale, and
+// glyph index, adjust them with an AstroExpression if set.
+
+void AdjustGlyph(int *ch, int *x, int *y, int *fi, int *nScale,
+  int i, char *szExpFont)
+{
+  if (!(!us.fExpOff && FSzSet(szExpFont)))
+    return;
+  ExpSetN(iLetterU, i);
+  ExpSetN(iLetterV, *ch);
+  ExpSetN(iLetterW, *fi);
+  ExpSetN(iLetterX, *x);
+  ExpSetN(iLetterY, *y);
+  ExpSetN(iLetterZ, *nScale);
+  ParseExpression(szExpFont);
+  *ch     = NExpGet(iLetterV);
+  *fi     = NExpGet(iLetterW);
+  *x      = NExpGet(iLetterX);
+  *y      = NExpGet(iLetterY);
+  *nScale = NExpGet(iLetterZ);
+}
+#endif
+
+
+#ifdef WINANY
+// Draw an astrology character from a special font on the screen. Used to draw
+// sign, planet, aspect, and Nakshatra glyphs from these fonts within charts.
+
+flag DrawGlyph(int ch, int x, int y, int fi, int nScale)
+{
+  HFONT hfont, hfontPrev;
+  SIZE size;
+  char sz[3];
+  WCHAR wz[2];
+  KV kvSav;
+  int cch = 1 + (fi == fiArial && ch < 0), nSav;
+
+  // Fonts: 1=Wingdings, 2=Astro, 3=EnigmaAstrology, 4=HamburgSymbols,
+  // 5=Astronomicon, 6=StarFont Sans, 7=StarFont Serif, 8=HanksNakshatra,
+  // 9=Arial, 10=Courier New, 11=Consolas, 12=Lucida Console, 13=Cascadia Mono
+#ifdef WIN
+  FEnsureFontInstalled(fi);
+#endif
+  hfont = CreateFont(12*gi.nScale*nScale/100, 0, 0, 0, !gs.fThick ? 400 : 800,
+    fFalse, fFalse, fFalse, FBetween(fi, fiArial, fiCascadia) ?
+    DEFAULT_CHARSET : (fi >= fiAstro && fi != fiNakshatr ? ANSI_CHARSET :
+    SYMBOL_CHARSET), OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, PROOF_QUALITY,
+    VARIABLE_PITCH | FF_DONTCARE, rgszFontName[fi]);
+  if (hfont == NULL)
+    return fFalse;
+  hfontPrev = (HFONT)SelectObject(wi.hdc, hfont);
+  kvSav = SetTextColor(wi.hdc, gi.kvCur);
+  nSav = SetBkMode(wi.hdc, TRANSPARENT);
+  if (fi >= fiArial && cch <= 1) {
+    // Draw a single (potentially Unicode) character.
+    wz[0] = ch; wz[1] = chNull;
+    GetTextExtentPointW(wi.hdc, wz, cch, &size);
+    TextOutW(wi.hdc, x - (size.cx >> 1), y - (size.cy >> 1), wz, cch);
+  } else {
+    // Draw a special symbol character or a multi-character number.
+    if (cch <= 1) {
+      sz[0] = ch; sz[1] = chNull;
+    } else
+      sprintf(sz, "%d", -ch);
+    GetTextExtentPoint(wi.hdc, sz, cch, &size);
+    TextOut(wi.hdc, x - (size.cx >> 1), y - (size.cy >> 1), sz, cch);
+  }
+  SetBkMode(wi.hdc, nSav);
+  SetTextColor(wi.hdc, kvSav);
+  SelectObject(wi.hdc, hfontPrev);
+  DeleteObject(hfont);
+  return fTrue;
+}
+
+
+// Clear and erase the entire graphics screen on Windows.
+
+void WinClearScreen(KI ki)
+{
+  KV kv = KvFromKi(ki);
+
+  wi.hbrush = CreateSolidBrush((COLORREF)kv);
+  SelectObject(wi.hdc, wi.hbrush);
+  PatBlt(wi.hdc, -gi.xOffset, -gi.yOffset,
+    wi.xClient*wi.nScaleWin, wi.yClient*wi.nScaleWin, PATCOPY);
+  SelectObject(wi.hdc, GetStockObject(NULL_BRUSH));
+  DeleteObject(wi.hbrush);
+}
+#endif
+
+
+// Clear and erase the graphics screen or bitmap contents.
+
+void DrawClearScreen()
+{
+#ifdef PS
+  real rT;
+
+  if (gs.ft == ftPS) {
+    // For PostScript charts first output page orientation information.
+    if (gs.fPSComplete) {
+      if (gs.nOrient == 0)
+        gs.nOrient = gs.xWin > gs.yWin ? -1 : 1;
+      if (gs.nOrient < 0) {
+        // Values chartx and charty are reversed for Landscape mode.
+        rT = gs.xInch/(real)gs.yWin < gs.yInch/(real)gs.xWin ?
+          gs.xInch*72.0/(real)gs.yWin : gs.yInch*72.0/(real)gs.xWin;
+        fprintf(gi.file, "%d %d translate\n",
+          (int)(gs.xInch*72.0 + gs.yWin*rT)/2,
+          (int)(gs.yInch*72.0 + gs.xWin*rT)/2);
+        fprintf(gi.file, "-90 rotate\n");
+      } else {
+        // Most charts are in Portrait mode.
+        rT = gs.xInch/(real)gs.xWin < gs.yInch/(real)gs.yWin ?
+          gs.xInch*72.0/(real)gs.xWin : gs.yInch*72.0/(real)gs.yWin;
+        fprintf(gi.file, "%d %d translate\n",
+          (int)(gs.xInch*72.0 - gs.xWin*rT)/2,
+          (int)(gs.yInch*72.0 + gs.yWin*rT)/2);
+      }
+    } else {
+      fprintf(gi.file, "0 %d translate\n", gs.yWin / PSMUL);
+      rT = 1.0 / (real)PSMUL;
+    }
+    fprintf(gi.file, "1 -1 scale\n");
+    fprintf(gi.file, "%f dup scale\n", rT);
+  }
+#endif
+#ifdef META
+  if (gs.ft == ftWmf)
+    MetaInit();        // For metafiles first go write header information.
+#endif
+
+  // Don't actually erase the screen if the -Xj switch is in effect.
+  if (gs.fJetTrail
+#ifdef WIN
+    && !wi.fSmoothZoom
+#endif
+    )
+    return;
+
+  DrawColor(gi.kiOff);
+#ifdef WINANY
+  // For Windows charts clear entire window, not just the chart area.
+  if (!gi.fFile)
+    WinClearScreen(gi.kiCur);
+  else
+#endif
+    DrawBlock(0, 0, gs.xWin - 1, gs.yWin - 1);    // Clear bitmap screen.
+}
+
+
+// Draw a line on the screen, specified by its endpoints. In addition, there
+// is a specified a skip factor, which allows drawing dashed lines.
+
+void DrawDash(int x1, int y1, int x2, int y2, int skip)
+{
+  int x, y, i, dx, dy, xInc, yInc, xInc2, yInc2, d, dInc, z, zMax;
+
+  if (skip < 0)
+    skip = 0;
+  else if (skip > 0 && gs.fThick)
+    skip++;
+#ifdef ISG
+  if (!gi.fFile) {
+    if (!skip) {
+#ifdef X11
+      // For non-dashed X window lines, have the Xlib do it.
+
+      XDrawLine(gi.disp, gi.pmap, gi.gc, x1, y1, x2, y2);
+      // Some XDrawLine implementations don't draw the last pixel.
+      XDrawPoint(gi.disp, gi.pmap, gi.gc, x2, y2);
+      if (gs.fThick) {
+        // Make the line thicker by drawing it four times.
+        XDrawLine(gi.disp, gi.pmap, gi.gc, x1+1, y1, x2+1, y2);
+        XDrawLine(gi.disp, gi.pmap, gi.gc, x1, y1+1, x2, y2+1);
+        XDrawLine(gi.disp, gi.pmap, gi.gc, x1+1, y1+1, x2+1, y2+1);
+        XDrawPoint(gi.disp, gi.pmap, gi.gc, x2+1, y2);
+        XDrawPoint(gi.disp, gi.pmap, gi.gc, x2, y2+1);
+        XDrawPoint(gi.disp, gi.pmap, gi.gc, x2+1, y2+1);
+      }
+#endif
+#ifdef WINANY
+      if (x1 == x2 && y1 == y2) {
+        DrawPoint(x1, y1);
+        return;
+      }
+      MoveTo(wi.hdc, x1, y1);
+      LineTo(wi.hdc, x2, y2);
+      if (wi.nScaleWin > 1)
+        return;
+      if (!gs.fThick) {
+        // For Windows lines, have to manually draw the last pixel.
+        SetPixel(wi.hdc, x2, y2, (COLORREF)gi.kvCur);
+      } else {
+        // Make the line thicker by drawing it four times.
+        i = gi.nScaleT;
+        LineTo(wi.hdc, x2+i, y2);
+        LineTo(wi.hdc, x1+i, y1);
+        LineTo(wi.hdc, x1,   y1+i);
+        LineTo(wi.hdc, x2,   y2+i);
+        LineTo(wi.hdc, x2+i, y2+i);
+        LineTo(wi.hdc, x1+i, y1+i);
+        LineTo(wi.hdc, x1,   y1);
+      }
+#endif
+      return;
+    }
+#ifdef WIN
+    if (skip && wi.nScaleWin > 1)
+      skip = (skip + 2)*wi.nScaleWin + gs.nThickAdjust - 1;
+#endif
+  }
+#endif // ISG
+
+#ifdef PS
+  if (gs.ft == ftPS) {
+
+    // For PostScript charts can save file size if we output a LineTo command
+    // when the start vertex is the same as the end vertex of the previous
+    // line drawn, instead of writing out both vertices.
+
+    PsLineCap(fTrue);
+    PsDash(skip);
+    if (gi.xPen != x1 || gi.yPen != y1)
+      fprintf(gi.file, "%d %d %d %d l\n", x1, y1, x2, y2);
+    else
+      fprintf(gi.file, "%d %d t\n", x2, y2);
+    gi.xPen = x2; gi.yPen = y2;
+    PsStroke(2);
+    return;
+  }
+#endif
+
+#ifdef META
+  if (gs.ft == ftWmf) {
+
+    // For metafile charts can save file size for consecutive lines sharing
+    // endpoints by consolidating them into a PolyLine.
+
+    if (gi.xPen != x1 || gi.yPen != y1) {
+      if (x1 != x2 || y1 != y2) {
+        gi.kiLineDes = (gi.kiLineDes & 15) + 16*(skip > 3 ? 3 : skip);
+        MetaSelect();
+        gi.pwPoly = gi.pwMetaCur;
+        gi.kiPoly = gi.kiCur;
+        MetaRecord(8, 0x325);      // Polyline
+        MetaWord(2); MetaWord(x1); MetaWord(y1);
+      } else {
+        DrawPoint(x1, y1);
+        MetaPoint(x1, y1, rgbbmp[gi.kiCur]);
+        return;
+      }
+    } else {
+      *gi.pwPoly += 2;
+      (*(gi.pwPoly+3))++;
+      // Note: Technically should update the max record size in the file
+      // header here too, but it doesn't seem necessary.
+    }
+    MetaWord(x2); MetaWord(y2);
+    gi.xPen = x2; gi.yPen = y2;
+    return;
+  }
+#endif
+
+#ifdef SVG
+  if (gs.ft == ftSVG) {
+    SvgSetColor();
+    fprintf(gi.file, "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\"",
+      x1, y1, x2, y2);
+    if (skip)
+      fprintf(gi.file, " stroke-dasharray=\"%d %d\"", SVGMUL, SVGMUL*(skip+1));
+    fprintf(gi.file, "/>\n");
+    return;
+  }
+#endif
+
+#ifdef WIRE
+  if (gs.ft == ftWire) {
+    // Solid non-dashed lines are supported in wireframe format.
+    if (skip == 0) {
+      WireLine(x1, y1, gi.zDefault, x2, y2, gi.zDefault);
+      return;
+    }
+  }
+#endif
+
+  // If none of the above cases hold, then have to draw line dot by dot.
+
+  // Determine slope.
+  dx = x2 - x1; dy = y2 - y1;
+  if (NAbs(dx) >= NAbs(dy)) {
+    xInc = NSgn(dx); yInc = 0;
+    xInc2 = 0; yInc2 = NSgn(dy);
+    zMax = NAbs(dx); dInc = NAbs(dy);
+    d = zMax - (!FOdd(dx) && x1 > x2);
+  } else {
+    xInc = 0; yInc = NSgn(dy);
+    xInc2 = NSgn(dx); yInc2 = 0;
+    zMax = NAbs(dy); dInc = NAbs(dx);
+    d = zMax - (!FOdd(dy) && y1 > y2);
+  }
+  d >>= 1;
+
+  // Loop over long axis, adjusting short axis for slope as needed.
+  x = x1; y = y1;
+  if (skip <= 0) {
+    // Fast solid line case.
+    for (z = 0; z <= zMax; z++) {
+      DrawPoint(x, y);
+      x += xInc; y += yInc; d += dInc;
+      if (d >= zMax) {
+        x += xInc2; y += yInc2; d -= zMax;
+      }
+    }
+  } else {
+    // Slightly slower dashed line case.
+    i = 0;
+    for (z = 0; z <= zMax; z++) {
+      if (i < 1)
+        DrawPoint(x, y);
+      i = i < skip ? i+1 : 0;
+      x += xInc; y += yInc; d += dInc;
+      if (d >= zMax) {
+        x += xInc2; y += yInc2; d -= zMax;
+      }
+    }
+  }
+}
+
+
+// Draw a normal line on the screen, however if the x coordinates are close to
+// either of the two given bounds, then assume that the line runs off one side
+// and reappears on the other, so draw the appropriate two lines instead. This
+// is used by the Ley line and astrocartography routines, which draw lines
+// running around the world and hence off the edges of the maps.
+
+void DrawWrap(int x1, int y1, int x2, int y2, int xmin, int xmax)
+{
+  int xmid, ymid, i, j, k;
+
+  if (x1 < 0) {           // Special case for drawing world map.
+    DrawPoint(x2, y2);
+    return;
+  }
+  j = (xmin < 0);    // Negative xmin means always draw forward.
+  if (j)
+    neg(xmin);
+  xmid = (xmax-xmin) / 2;
+  if (j)
+    k = (x1 < x2 ? xmid*7 : xmid)/4;
+  else
+    k = xmid;
+
+  // If endpoints aren't near opposite edges, just draw the line and return.
+  if (NAbs(x2-x1) < k) {
+    DrawLine(x1, y1, x2, y2);
+    return;
+  }
+  if ((i = (xmax-xmin+1) + (!j && x1 < xmid ? x1-x2 : x2-x1)) == 0)
+    i = 1;
+
+  // Determine vertical coordinate where our line runs off edges of screen.
+  ymid = y1+(int)((real)(y2-y1)*
+    (!j && x1 < xmid ? (real)(x1-xmin) : (real)(xmax-x1))/(real)i + rRound);
+  DrawLine(x1, y1, !j && x1 < xmid ? xmin : xmax, ymid);
+  DrawLine(j || x2 < xmid ? xmin : xmax, ymid, x2, y2);
+}
+
+
+// This routine, and its companion below, clips a line defined by its
+// endpoints to either above some line y=c, or below some line y=c. By
+// passing in parameters in different orders, can clip to vertical lines
+// too. These are used by the FDrawClip() routine below.
+
+void ClipLesser(int *x1, int *y1, int *x2, int *y2, int s)
+{
+  if (*y2 - *y1)
+    *x1 -= NMultDiv(*y1 - s, *x2 - *x1, *y2 - *y1);
+  *y1 = s;
+}
+
+void ClipGreater(int *x1, int *y1, int *x2, int *y2, int s)
+{
+  if (*y2 - *y1)
+    *x1 += NMultDiv(s - *y1, *x2 - *x1, *y2 - *y1);
+  *y1 = s;
+}
+
+
+// Draw a line on the screen. This is just like DrawLine() routine earlier,
+// however first clip the endpoints to the given viewport before drawing.
+// Return true if some clipping was done, or false if entire line fits within
+// viewport or if entire line is outside of viewport and nothing at all drawn.
+
+flag FDrawClip(int x1, int y1, int x2, int y2, int xl, int yl, int xh, int yh,
+  int skip, int *x0, int *y0)
+{
+  if ((x1 < xl && x2 < xl) || (y1 < yl && y2 < yl) ||  // Skip if outside
+    (x1 > xh && x2 > xh) || (y1 > yh && y2 > yh))      // bounding box.
+    return fFalse;
+  if (x1 < xl)
+    ClipLesser (&y1, &x1, &y2, &x2, xl);    // Check left side of window.
+  if (x2 < xl)
+    ClipLesser (&y2, &x2, &y1, &x1, xl);
+  if (y1 < yl)
+    ClipLesser (&x1, &y1, &x2, &y2, yl);    // Check top side of window.
+  if (y2 < yl)
+    ClipLesser (&x2, &y2, &x1, &y1, yl);
+  if (x1 > xh)
+    ClipGreater(&y1, &x1, &y2, &x2, xh);    // Check right of window.
+  if (x2 > xh)
+    ClipGreater(&y2, &x2, &y1, &x1, xh);
+  if (y1 > yh)
+    ClipGreater(&x1, &y1, &x2, &y2, yh);    // Check bottom of window.
+  if (y2 > yh)
+    ClipGreater(&x2, &y2, &x1, &y1, yh);
+  if (x1 < xl || x2 < xl || y1 < yl || y2 < yl ||  // Skip if not inside
+    x1 > xh || x2 > xh || y1 > yh || y2 > yh)      // bounding box.
+    return fFalse;
+  DrawDash(x1, y1, x2, y2, skip);           // Go draw the line.
+
+  // Return coordinates at which drawn line crosses bounding box.
+  if (x0 != NULL) {
+    if (x1 == xl || x1 == xh || y1 == yl || y1 == yh) {
+      *x0 = x1; *y0 = y1;
+      return fTrue;
+    }
+    if (x2 == xl || x2 == xh || y2 == yl || y2 == yh) {
+      *x0 = x2; *y0 = y2;
+      return fTrue;
+    }
+  }
+  return fFalse;
+}
+
+
+// Fast version of rotating that assumes the slow trigonometry values have
+// already been computed. Useful when rotating many points by the same angle.
+
+#define RotateR2(x1, y1, x2, y2, rS, rC) x2 = (x1)*(rC) - (y1)*(rS); \
+  y2 = (y1)*(rC) + (x1)*(rS)
+#define RotateR2Init(rS, rC, d) rS = RSinD(d); rC = RCosD(d)
+
+// Draw a circle or ellipse inside the given bounding rectangle. Extra
+// parameters allow the ellipse to be rotated, or a subarc to be drawn.
+
+void DrawArc(int x1, int y1, int x2, int y2, real rRotate, real t1, real t2)
+{
+  int x, y, rx, ry, m, n, u, v, i, di;
+  real rS, rC, dx, dy, dx2, dy2, dt, t;
+
+  if (gi.fFile || rRotate != 0.0) {
+    x = (x1+x2)/2; y = (y1+y2)/2; rx = (x2-x1)/2; ry = (y2-y1)/2;
+    if (gs.ft == ftBmp || gs.ft == ftWire || rRotate != 0.0) {
+      RotateR2Init(rS, rC, rRotate);
+      dt = (t2 - t1) / rDegMax;
+      i = NAbs(rx) + NAbs(ry);
+      di = 2 + (i < 90) + (i < 72) + (i < 60) + (i < 40);
+      for (i = 0; i <= nDegMax; i += di) {
+        t = t1 + dt*(real)i;
+        dx = ((real)rx+rRound) * RCosD(t);
+        dy = ((real)ry+rRound) * RSinD(t);
+        if (rRotate != 0.0) {
+          // Fast rotation if doing a rotated ellipse.
+          RotateR2(dx, dy, dx2, dy2, rS, rC);
+        } else {
+          dx2 = dx; dy2 = dy;
+        }
+        u = x + (int)dx2; v = y + (int)dy2;
+        if (i > 0)
+          DrawLine(m, n, u, v);
+        m = u; n = v;
+      }
+    }
+#ifdef PS
+    else if (gs.ft == ftPS) {
+      PsLineCap(fFalse);
+      PsStrokeForce();
+      PsDash(0);
+      fprintf(gi.file, "%d %d %d %d el\n", rx, ry, x, y);
+    }
+#endif
+#ifdef META
+    else if (gs.ft == ftWmf) {
+      gi.kiFillDes = cColor;      // Specify a hollow fill brush.
+      MetaSelect();
+      MetaEllipse(x1, y1, x2+gi.nPenWid*2, y2+gi.nPenWid*2);
+    }
+#endif
+#ifdef SVG
+    else if (gs.ft == ftSVG) {
+      SvgSetColor();
+      if (rx == ry)
+        fprintf(gi.file, "<circle r=\"%d\" cx=\"%d\" cy=\"%d\"/>\n",
+          rx, x, y);
+      else
+        fprintf(gi.file, "<ellipse rx=\"%d\" ry=\"%d\" "
+          "cx=\"%d\" cy=\"%d\"/>\n", rx, ry, x, y);
+    }
+#endif
+  }
+#ifdef X11
+  else {
+    i = nDegMax*64;
+    XDrawArc(gi.disp, gi.pmap, gi.gc, x1, y1, x2-x1, y2-y1, 0, i);
+    if (gs.fThick) {
+      // Make the ellipse thicker by drawing it four times.
+      XDrawArc(gi.disp, gi.pmap, gi.gc, x1+1, y1, x2-x1, y2-y1, 0, i);
+      XDrawArc(gi.disp, gi.pmap, gi.gc, x1, y1+1, x2-x1, y2-y1, 0, i);
+      XDrawArc(gi.disp, gi.pmap, gi.gc, x1+1, y1+1, x2-x1, y2-y1, 0, i);
+    }
+  }
+#endif
+#ifdef WINANY
+  else {
+    Ellipse(wi.hdc, x1, y1, x2+1, y2+1);
+    if (wi.nScaleWin > 1)
+      return;
+    if (gs.fThick) {
+      // Make the ellipse thicker by drawing it four times.
+      i = gi.nScaleT;
+      Ellipse(wi.hdc, x1+i, y1,   x2+1+i, y2+1);
+      Ellipse(wi.hdc, x1,   y1+i, x2+1,   y2+1+i);
+      Ellipse(wi.hdc, x1+i, y1+i, x2+1+i, y2+1+i);
+    }
+  }
+#endif
+}
+
+
+// Draw a filled in circle or ellipse inside a bounding rectangle.
+
+void DrawEllipse2(int x1, int y1, int x2, int y2)
+{
+  int rx, ry, r, i, j, iT, jT, q, qLo, qHi, m1, m2, n1, n2, x, y;
+
+  if (gi.fFile) {
+    x = (x1 + x2) >> 1; y = (y1 + y2) >> 1;
+    rx = NAbs(x2 - x1) >> 1; ry = NAbs(y2 - y1) >> 1;
+    if (gs.ft == ftBmp || gs.ft == ftWire) {
+      // This efficient algorithm has no calculations more complicated than
+      // addition (and multiplication to proportion in case of an ellipse).
+      if (rx == 0 || ry == 0) {
+        DrawBlock(x1, y1, x2, y2);
+        return;
+      }
+      r = Max(rx, ry);
+      j = r; q = r+1; qLo = 1; qHi = r+r-1;
+      m1 = (x1 + x2) >> 1; m2 = m1 + FOdd(x2 - x1);
+      n1 = (y1 + y2) >> 1; n2 = n1 + FOdd(y2 - y1);
+      for (i = 0; i <= r; i++) {
+        iT = (rx <= ry) ? i : i * ry / rx;
+        jT = (rx >= ry) ? j : j * rx / ry;
+        DrawLineX(m1 - jT, m2 + jT, n1 - iT);
+        DrawLineX(m1 - jT, m2 + jT, n2 + iT);
+        q -= qLo;
+        while (q < 0) {
+          q += qHi;
+          qHi -= 2;
+          j--;
+        }
+        qLo += 2;
+      }
+    }
+#ifdef PS
+    else if (gs.ft == ftPS) {
+      PsLineCap(fFalse);
+      PsStrokeForce();
+      PsDash(0);
+      fprintf(gi.file, "%d %d %d %d ef\n", rx, ry, x, y);
+    }
+#endif
+#ifdef META
+    else {
+      gi.kiFillDes = gi.kiCur;    // Specify a solid fill brush.
+      MetaSelect();
+      MetaEllipse(x1+gi.nPenWid/3, y1+gi.nPenWid/3,
+        x2+1+gi.nPenWid/3, y2+1+gi.nPenWid/3);
+    }
+#endif
+  }
+#ifdef X11
+  else
+    XFillArc(gi.disp, gi.pmap, gi.gc, x1, y1, x2-x1, y2-y1, 0, nDegMax*64);
+#endif
+#ifdef WINANY
+  else {
+    wi.hbrush = CreateSolidBrush((COLORREF)KvFromKi(gi.kiCur));
+    SelectObject(wi.hdc, wi.hbrush);
+    Ellipse(wi.hdc, x1, y1, x2+1, y2+1);
+    SelectObject(wi.hdc, GetStockObject(NULL_BRUSH));
+    DeleteObject(wi.hbrush);
+  }
+#endif
+}
+
+
+// Draw a filled in circle or ellipse inside a bounding rectangle, which has
+// a proportion of it in phase or shadow, like a crescent Moon. The phased
+// part may be rotated by the specified number of degrees.
+
+void DrawCrescent(int x1, int y1, int x2, int y2, real rProp, real rRotate,
+  KI ki0, KI ki1)
+{
+  real xc, yc, rSq, dxy, rx, ry, dx, dy, dx2, dy2, rS, rC;
+  int x, y, xPrev;
+  KI ki, kiPrev;
+
+  // Can only draw up to a half Moon crescent. Any greater means to draw a
+  // crescent coming in from the inverse angle with the two colors reversed.
+  if (rProp <= 0.5)
+    rProp = 1.0 - rProp*2.0;
+  else {
+    rProp = (rProp - 0.5)*2.0;
+    rRotate += rDegHalf;
+    SwapN(ki0, ki1);
+  }
+
+  // Initialize variables.
+  xc = (real)(x1 + x2) / 2.0; yc = (real)(y1 + y2) / 2.0;
+  rx = (real)(x2 - x1) / 2.0; ry = (real)(y2 - y1) / 2.0;
+  rSq = Sq(rx) + rx/2.0;
+  dxy = rx / ry;
+  RotateR2Init(rS, rC, rRotate);
+  x1 = Max(x1, 0); x2 = Min(x2, gs.xWin-1);
+  y1 = Max(y1, 0); y2 = Min(y2, gs.yWin-1);
+
+  // Draw one row of the ellipse at a time.
+  for (y = y1; y <= y2; y++) {
+    xPrev = ki = kiPrev = ~0;
+    for (x = x1; x <= x2; x++) {
+      dx = (real)x - xc;
+      dy = (real)y - yc;
+      if (rx != ry)
+        dy *= dxy;
+      if (Sq(dx) + Sq(dy) > rSq) {
+        if (xPrev != ~0)
+          break;
+        continue;
+      }
+      if (rRotate != 0.0) {
+        // Fast rotation if doing a rotated ellipse.
+        RotateR2(dx, dy, dx2, dy2, rS, rC);
+      } else {
+        dx2 = dx; dy2 = dy;
+      }
+      ki = ki1;
+      if (dx2 > 0.0) {
+        dx2 /= rProp;
+        if (Sq(dx2) + Sq(dy2) > rSq)
+          ki = ki0;
+      }
+      // Don't draw anything in this row until the color changes.
+      if (xPrev == ~0)
+        xPrev = x;
+      if (kiPrev == ~0)
+        kiPrev = ki;
+      if (ki != kiPrev) {
+        DrawColor(kiPrev);
+        DrawLineX(xPrev, x-1, y);
+        kiPrev = ki;
+        xPrev = x;
+      }
+    }
+    // Draw the rest of the color in this row, if any.
+    if (ki != ~0) {
+      DrawColor(ki);
+      DrawLineX(xPrev, x-1, y);
+    }
+  }
+}
+
+
+// Draw pixels filling in an irregular shaped area of orthoginally connected
+// pixels of the background color, using the specified color starting from the
+// specified coordinates.
+
+void DrawFill(int x, int y, KV kv)
+{
+  KV kvB, kvF;
+  // Variables for bitmap implementation.
+  PT2S rgpt[iFillMax];
+  int iTop = 1, iCur = 0, xnew, ynew, d;
+
+  if (!FOnWin(x, y))
+    return;
+  if (gi.fFile && (!gi.fBmp || gs.ft == ftWmf)) {
+    // Use nearest palette fill color in more limited environments.
+    kvB = gi.kiOff;
+    kvF = KiFromKv(kv, fFalse);
+  } else {
+    // 24 bit color bitmap environments allow all possible colors.
+    kvB = KvFromKi(gi.kiOff);
+    kvF = kv;
+  }
+  if (kvF == kvB)
+    return;
+
+  if (gi.fFile) {
+    if (gs.ft == ftBmp) {
+      if (GetXY(x, y) != kvB)
+        return;
+      SetXY(x, y, kvF);
+      rgpt[0].x = x; rgpt[0].y = y;
+      // Do a breadth first search to fill in the bitmap area.
+      while (iCur != iTop) {
+        x = rgpt[iCur].x; y = rgpt[iCur].y;
+        for (d = 0; d < 4; d++) {
+          xnew = x + dxOff[d]; ynew = y + dyOff[d];
+          if (!FOnWin(xnew, ynew) || GetXY(xnew, ynew) != kvB)
+            continue;
+          if (iTop == iCur)  // If array completely full, skip and don't add!
+            continue;
+          SetXY(xnew, ynew, kvF);
+          rgpt[iTop].x = xnew; rgpt[iTop].y = ynew;
+          iTop++;
+          if (iTop >= iFillMax)
+            iTop = 0;
+        }
+        iCur++;
+        if (iCur >= iFillMax)
+          iCur = 0;
+      }
+    }
+#ifdef META
+    else if (gs.ft == ftWmf) {
+      // Doesn't seem to work for background colors other than black.
+      gi.kiFillDes = kvF;
+      MetaSelect();
+      MetaFill(x, y, kvB);
+      return;
+    }
+#endif
+    // Not implemented in PostScript, SVG, or wireframe formats.
+  }
+#ifdef WINANY
+  else {
+    // Note that Windows FloodFill() doesn't work on printer DC's.
+    wi.hbrush = CreateSolidBrush((COLORREF)kvF);
+    SelectObject(wi.hdc, wi.hbrush);
+    ExtFloodFill(wi.hdc, x, y, (COLORREF)kvB, FLOODFILLSURFACE);
+    SelectObject(wi.hdc, GetStockObject(NULL_BRUSH));
+    DeleteObject(wi.hbrush);
+  }
+#endif
+}
+
+
+// Print a string of text on the graphic window at specified location. To do
+// this, either use Astrolog's own internal vector font (6x10 or 9x15) and
+// draw each letter separately, or else specify and output as system fonts.
+
+void DrawSz(CONST char *sz, int x, int y, int dt)
+{
+  int nFont = gs.nFontTxt, nScaleSav = gi.nScale, kiSav, nScale2, cch, i, dch;
+  flag fBig = fFalse, fBigger = fFalse, fThin;
+  wchar wch;
+  char ch;
+#ifdef PS
+  char sz2[cchSzMax];
+  CONST char *pch;
+#endif
+#ifdef WINANY
+  HFONT hfont, hfontPrev;
+  KV kvSav;
+  int nSav;
+#endif
+
+  cch = CwchSz(sz);
+#ifdef EXPRESS
+  // Adjust text if AstroExpression says to do so.
+  if (!us.fExpOff && FSzSet(us.szExpFontTxt)) {
+    ExpSetN(iLetterV, cch);
+    ExpSetN(iLetterW, nFont);
+    ExpSetN(iLetterX, x);
+    ExpSetN(iLetterY, y);
+    ExpSetN(iLetterZ, dt);
+    ParseExpression(us.szExpFontTxt);
+    nFont = NExpGet(iLetterW);
+    x     = NExpGet(iLetterX);
+    y     = NExpGet(iLetterY);
+    dt    = NExpGet(iLetterZ);
+  }
+#endif
+  if (dt & dtScale2) {
+    nScale2 = gi.nScaleTextT2;
+    fBigger = (gs.nScaleText == 300 || gs.nScaleText == 350);
+    fBig = (fBigger || gs.nScaleText == 150);
+  } else if (dt & dtScale)
+    nScale2 = gi.nScale << 1;
+  else
+    nScale2 = gi.nScaleT << 1;
+  if (!(gs.nScaleText == 150 && nFont <= 0))
+    gi.nScale = nScale2 >> 1;
+  else
+    gi.nScale = ((nScale2 / gi.nScaleT) >> 1) * gi.nScaleT;
+  fThin = gs.fThick && nFont == 0 && nScale2 / gi.nScaleT <= 2;
+  if (fThin)
+    DrawThick(fFalse);
+  x += gi.nScale;
+  if (!(dt & dtLeft))
+    x -= cch*xFont*nScale2/4;
+  if (dt & dtBottom)
+    y -= (yFont-3)*nScale2/2;
+  else if (!(dt & dtTop))
+    y -= yFont*nScale2/4;
+  if (dt & dtErase) {
+    kiSav = gi.kiCur;
+    DrawColor(gi.kiOff);
+    DrawBlock(x, y, x+xFont*nScale2*cch/2-1, y+(yFont-2)*nScale2/2);
+    DrawColor(kiSav);
+  }
+#ifdef PS
+  if (gs.ft == ftPS && nFont > 0) {
+    PsFont(nFont);
+    pch = ConvertSzToLatin(sz, sz2, cchSzMax);
+    fprintf(gi.file, "%d %d(%s)center\n", x + xFontT*cch/2, y + yFontT/2, pch);
+    gi.nScale = nScaleSav;
+    return;
+  }
+#endif
+#ifdef SVG
+  if (gs.ft == ftSVG && nFont > 0) {
+    SvgText(sz, 0, x, y + yFont2*nScale2/2, nFont, gi.nScale*yFont, fFalse);
+    gi.nScale = nScaleSav;
+    return;
+  }
+#endif
+#ifdef WINANY
+  if (!gi.fFile && nFont > 0) {
+    i = xFont*nScale2;
+    if (nFont == fiLucida)
+      i = i*90/100;
+    hfont = CreateFont(i, 0, 0, 0, !gs.fThick ? 400 : 800,
+      fFalse, fFalse, fFalse, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+      CLIP_DEFAULT_PRECIS, PROOF_QUALITY, FIXED_PITCH | FF_MODERN,
+      rgszFontName[nFont]);
+    if (hfont == NULL)
+      return;
+    hfontPrev = (HFONT)SelectObject(wi.hdc, hfont);
+    kvSav = GetTextColor(wi.hdc);
+    SetTextColor(wi.hdc, gi.kvCur);
+    nSav = SetBkMode(wi.hdc, TRANSPARENT);
+  }
+#endif
+#ifdef WIN
+  if (nFont == 0)
+    AdjustCoordinates(&x, &y);
+#endif
+  while (*sz) {
+    ch = *sz;
+    dch = 1;
+    if (us.nCharset >= ccUTF8) {
+      dch = UTF8ToWch((uchar *)sz, &wch);
+      ch = ChLatinFromWch(wch);
+    } else if (us.nCharset == ccIBM)
+      ch = ChLatinFromWch(WchFromChIBM(ch));
+#ifdef WINANY
+    if (!gi.fFile && nFont > 0) {
+      if (dch > 1)
+        TextOutW(wi.hdc, x-nScale2/2, y-nScale2*3/2, (LPCWSTR)&wch, 1);
+      else
+        TextOutA(wi.hdc, x-nScale2/2, y-nScale2*3/2, (LPCSTR)&ch, 1);
+    } else
+#endif
+#ifdef META
+    if (gs.ft == ftWmf && nFont > 0) {
+      gi.nFontDes = nFont;
+      gi.kiTextDes = gi.kiCur;
+      gi.nAlignDes = 0x6 | 0 /* Center | Top */;
+      MetaSelect();
+      MetaTextOut(x+nScale2*3/2, y-nScale2, 1);
+      MetaWord(WFromBB(ch, 0));
+    } else
+#endif
+    {
+      if (fBigger) {
+        fBigger = fFalse;
+        gi.nScale = gi.nScale * 2 / 3;
+      }
+      i = (uchar)ch-' ';
+      if (i < 256-32)
+        DrawTurtle(!fBig ? szDrawCh[i] : szDrawCh2[i], x, y);
+    }
+    x += xFont2*nScale2;
+    sz += dch;
+  }
+#ifdef WINANY
+  if (!gi.fFile && nFont > 0) {
+    SetBkMode(wi.hdc, nSav);
+    SetTextColor(wi.hdc, kvSav);
+    SelectObject(wi.hdc, hfontPrev);
+    DeleteObject(hfont);
+  }
+#endif
+  gi.nScale = nScaleSav;
+  if (fThin)
+    DrawThick(fTrue);
+}
+
+
+//                                        ATGCLVLSSCAPco
+CONST uchar szSignFontEnigma[cSign+4]  = "1234567890-=+ ";
+CONST uchar szSignFontHamburg[cSign+4] = "asdfghjklzxcv ";
+CONST uchar szSignFontStar[cSign+4]    = "xcvbnmXCVBNMZ ";
+
+// Draw the glyph of a sign at particular coordinates on the screen. To do
+// this either use Astrolog's turtle vector representation, or else specify
+// a system font character.
+
+void DrawSign(int i, int x, int y)
+{
+  int nFont = gs.nFontSig, ch = -1, nScale = 100;
+  flag fDoThin;
+
+  if (nFont == fiWingding)
+    ch = '^' + i - 1;
+  else if (nFont == fiAstro)
+    ch = 'A' + i - 1;
+  else if (nFont == fiEnigma) {
+    ch = szSignFontEnigma[i == sCap && gs.nGlyphCap > 1 ? cSign : i-1];
+    y -= gi.nScale;
+  } else if (nFont == fiHamburg) {
+    ch = szSignFontHamburg[i == sCap && gs.nGlyphCap > 1 ? cSign : i-1];
+    y += gi.nScale;
+  } else if (nFont == fiAstronom) {
+    ch = (i == sCap && gs.nGlyphCap <= 1) ? '\\' : ('A' + i - 1);
+    if (FBetween(i, sLeo, sSco))
+      y -= gi.nScale;
+  } else if (FBetween(nFont, fiStarSan, fiStarSer)) {
+    ch = szSignFontStar[i == sCap && gs.nGlyphCap > 1 ? cSign : i-1];
+    if (FBetween(i, sLeo, sVir)) {
+      y -= gi.nScaleT;
+      nScale = 90;
+    }
+  } else if (nFont >= fiArial && gs.ft != ftPS && gs.ft != ftWmf)
+    ch = 0x2648 + i - 1;
+  // A few fonts support Ophiuchus, which is specified as "sign" #13.
+  if (i > cSign)
+    ch = (nFont >= fiArial && gs.ft != ftPS && gs.ft != ftWmf) ? 0x26ce : -1;
+#ifdef EXPRESS
+  AdjustGlyph(&ch, &x, &y, &nFont, &nScale, i, us.szExpFontSig);
+  if (!FBetween(nFont, 0, cFont-1))
+    ch = -1;
+#endif
+  fDoThin = gs.fThick && nFont == 0 && ch <= 0 && gi.nScale <= gi.nScaleT;
+  if (fDoThin)
+    DrawThick(fFalse);
+#ifdef WINANY
+  if (!gi.fFile && ch > 0) {
+    if (DrawGlyph(ch, x, y, nFont, nScale))
+      return;
+  }
+#endif
+#ifdef PS
+  if (gs.ft == ftPS && nFont > 0 && ch > 0) {
+    PsFont(nFont);
+    fprintf(gi.file, "%d %d(%s%c)center\n", x, y, PsEscape(ch), ch);
+    return;
+  }
+#endif
+#ifdef META
+  if (gs.ft == ftWmf && nFont > 0 && ch > 0) {
+    gi.nFontDes = nFont;
+    gi.kiTextDes = gi.kiCur;
+    gi.nAlignDes = 0x6 | 0x8 /* Center | Bottom */;
+    MetaSelect();
+    MetaTextOut(x, y + 7*gi.nScale, 1);
+    MetaWord(WFromBB(ch, 0));
+    return;
+  }
+#endif
+#ifdef SVG
+  if (gs.ft == ftSVG && nFont > 0 && ch > 0) {
+    SvgText(NULL, ch, x, y, nFont, gi.nScale*(SVGMUL+4) * nScale/100, fTrue);
+    return;
+  }
+#endif
+
+  // Draw the sign using Astrolog's turtle vector font.
+  AdjustCoordinates(&x, &y);
+  if (i == sCap && gs.nGlyphCap > 1)
+    i = cSign+1;
+  else if (i == cSign+1)
+    i = cSign+2;
+  if (gi.nScale % 3 == 0 && szDrawSign3[i][0]) {
+    gi.nScale /= 3;
+    DrawTurtle(szDrawSign3[i], x, y);  // Special extra hi-res sign glyphs.
+    gi.nScale *= 3;
+  } else if (!FOdd(gi.nScale) && szDrawSign2[i][0]) {
+    gi.nScale >>= 1;
+    DrawTurtle(szDrawSign2[i], x, y);  // Special hi-res sign glyphs.
+    gi.nScale <<= 1;
+  } else
+    DrawTurtle(szDrawSign[i], x, y);
+  if (fDoThin)
+    DrawThick(fTrue);
+}
+
+
+// Draw the number of a house at particular coordinates on the screen.
+// Either use a turtle vector, or else write a number in a system font.
+
+void DrawHouse(int i, int x, int y)
+{
+  int nFont = gs.nFontHou, ch = -1, nScale = 100;
+  flag fDoThin;
+#ifdef SVG
+  char sz[3], *pch;
+#endif
+
+  if (nFont == fiWingding)
+    ch = 182 + i;
+  else if (nFont == fiAstronom)
+    ch = '0' + i;
+  else if (nFont >= fiArial && gs.ft != ftWmf)
+    ch = 0x2460 + i - 1;
+#ifdef EXPRESS
+  AdjustGlyph(&ch, &x, &y, &nFont, &nScale, i, us.szExpFontHou);
+  if (!FBetween(nFont, 0, cFont-1))
+    ch = -1;
+#endif
+  fDoThin = gs.fThick && nFont == 0 && ch <= 0 && gi.nScale <= gi.nScaleT;
+  if (fDoThin)
+    DrawThick(fFalse);
+#ifdef WINANY
+  if (!gi.fFile && ch > 0) {
+    if (nFont == fiArial)
+      ch = (i <= 9 ? '0' + i : -i);
+    if (DrawGlyph(ch, x, y, nFont, nScale))
+      return;
+  }
+#endif
+#ifdef PS
+  if (gs.ft == ftPS && nFont > 0 && ch != -1) {
+    PsFont(nFont);
+    if (nFont < fiArial)
+      fprintf(gi.file, "%d %d(%s%c)center\n", x, y, PsEscape(ch), ch);
+    else
+      fprintf(gi.file, "%d %d(%d)center\n", x, y, i);
+    return;
+  }
+#endif
+#ifdef META
+  if (gs.ft == ftWmf && nFont > 0 && ch != -1) {
+    gi.nFontDes = nFont;
+    gi.kiTextDes = gi.kiCur;
+    gi.nAlignDes = 0x6 | 0x8 /* Center | Bottom */;
+    MetaSelect();
+    MetaTextOut(x, y+4*gi.nScale, 1 + (nFont >= fiArial && i > 9));
+    if (nFont < fiArial)
+      MetaWord(WFromBB(ch, 0));
+    else
+      MetaWord(WFromBB(i > 9 ? '1' : '0'+i, i > 9 ? '0'+i-10 : 0));
+    return;
+  }
+#endif
+#ifdef SVG
+  if (gs.ft == ftSVG && nFont > 0 && ch > 0) {
+    pch = NULL;
+    if (nFont == fiArial) {
+      sprintf(sz, "%d", i);
+      pch = sz;
+    }
+    SvgText(pch, ch, x, y, nFont, gi.nScale*yFont * nScale/100, fTrue);
+    return;
+  }
+#endif
+
+  // Draw the house using Astrolog's turtle vector font.
+  AdjustCoordinates(&x, &y);
+  if (gi.nScale % 3 == 0 && szDrawHouse3[i][0]) {
+    gi.nScale /= 3;
+    DrawTurtle(szDrawHouse3[i], x, y);  // Special extra hi-res house numbers.
+    gi.nScale *= 3;
+  } else if (!FOdd(gi.nScale) && szDrawHouse2[i][0]) {
+    gi.nScale >>= 1;
+    DrawTurtle(szDrawHouse2[i], x, y);  // Special hi-res house numbers.
+    gi.nScale <<= 1;
+  } else
+    DrawTurtle(szDrawHouse[i], x, y);
+  if (fDoThin)
+    DrawThick(fTrue);
+}
+
+
+CONST uchar szObjectFontAstro[cuspHi+2] =
+// ESMMVMJSUNPccpjvnsl___pveA23I56D89M12
+  ";QRSTUVWXYZt    <>\202?  a  c     b  ";
+CONST uchar szObjectFontEnigma[dwarfHi+2] =
+// ESMMVMJSUNPccp___j___v___nslpveA23I56D89M12
+  "eabcdfghijkw_\373\374\300{},   A        M  "
+// ___vchzkaavpH___Pe___h___m___gq___s___o
+  "\311yz!@#$%&\302)\351\355\356 \364\366 ";
+CONST uchar szObjectFontHamburg[uranHi+2] =
+// E___SMMVMJSUNPccpjvn___s___l___pveA23I___56D___89M12vchzkaavp
+  "\211QWERTYUIOPMCVBN\213\214\370<mbZ  \223  \222  X   SDFGHJKL";
+CONST uchar szObjectFontAstronomicon[dwarfHi+2] =
+// ESMMVMJSUNPccpjvnslpveA23I56D89M12vc___h___z___k___a___a___v___p___HPehmgqso
+  ">QRSTUVWXYZqlmnogiz?kjc23e56f89d;<b\241\242\243\244\245\246\247\250prstuvwx"
+  "y";
+CONST uchar szObjectFontStar[dwarfHi+2] =
+// ESMMVMJSUNPccpjvnsl___pveA23I56D89M12
+  "LsdfghjSFGJD.:;_k?\330K!'1  4  2  3  "
+// vc___h___z___k___a___a___v___p___H___Pehmgqso
+  " \344\334\374\304\337\326\366\246\275        ";
+CONST wchar wzObjectFontUnicode[oCore+1] = {
+  0/*0x2295*/, 0x2609, 0x263d, 0x263f, 0x2640, 0x2642, 0x2643, 0x2644, 0x2645,
+  0x2646, 0x2647, 0/*26b7*/, 0/*26b3*/, 0/*26b4*/, 0/*26b5*/, 0/*26b6*/,
+  0x260a, 0x260b, 0/*26b8*/, 0/*2297*/, 0, 0};
+
+// Draw the glyph of an object at particular coordinates on the screen.
+
+void DrawObject(int obj, int x, int y)
+{
+  char szGlyph[4];
+  flag fNoText = fFalse, fDoThin, fCustomGlyph;
+  int col, nFont, ch, nScale;
+
+  if (!gs.fLabel)    // If inhibiting labels, then do nothing.
+    return;
+  if (obj < 0) {
+    // Negative object index means skip drawing glyph as letter abbreviation.
+    obj = -obj-1;
+    fNoText = fTrue;
+  }
+
+  col = kObjB[obj];
+#ifdef EXPRESS
+  // Adjust color if AstroExpression says to do so.
+  if (!us.fExpOff && FSzSet(us.szExpColObj)) {
+    ExpSetN(iLetterY, obj);
+    ExpSetN(iLetterZ, col);
+    ParseExpression(us.szExpColObj);
+    col = NExpGet(iLetterZ);
+    if (!FValidColorA(col))
+      col = kBlack;
+  }
+#endif
+  DrawColor(col);
+
+  fCustomGlyph = (szDrawObject[obj] != szDrawObjectDef[obj] ||
+    szDrawObject2[obj] != szDrawObjectDef2[obj]);
+  nFont = fCustomGlyph ? 0 : gs.nFontObj;
+  ch = -1;
+  nScale = 100;
+  if (nFont == fiAstro && obj <= cuspHi && szObjectFontAstro[obj] > ' ')
+    ch = szObjectFontAstro[obj];
+  else if (nFont == fiEnigma && obj <= dwarfHi &&
+    szObjectFontEnigma[obj] > ' ') {
+    ch = szObjectFontEnigma[obj];
+    if (obj == oEri && gs.nGlyphEri == 2)
+      ch = 236;
+    y -= gi.nScale;
+  } else if (nFont == fiHamburg && obj <= uranHi &&
+    szObjectFontHamburg[obj] > ' ') {
+    ch = szObjectFontHamburg[obj];
+    if (obj == oUra && gs.nGlyphUra == 2)
+      ch = 130;
+    else if (obj == oPlu && gs.nGlyphPlu == 2)
+      ch = 132;
+    else if (obj == oLil && gs.nGlyphLil == 2)
+      ch = '`';
+    else if (obj == oVtx && gs.nGlyphVer == 2)
+      ch = 149;
+    y += gi.nScale;
+  } else if (nFont == fiAstronom && obj <= dwarfHi) {
+    ch = szObjectFontAstronomicon[obj];
+    if (obj == oUra && gs.nGlyphUra == 2)
+      ch = 'a';
+    else if (obj == oPlu && gs.nGlyphPlu == 2)
+      ch = '_';
+    else if (obj == oPlu && gs.nGlyphPlu == 3)
+      ch = '`';
+    else if (us.fHouseAngle && FCusp(obj))
+      ch = '1' + obj - cuspLo;
+    if (FBetween(obj, uranLo+1, uranHi))
+      nScale = 85;
+    if (FBetween(obj, oEri, oSed) && obj != oMak)
+      y -= gi.nScale;
+  } else if (FBetween(nFont, fiStarSan, fiStarSer) && obj <= dwarfHi &&
+    szObjectFontStar[obj] > ' ') {
+    ch = szObjectFontStar[obj];
+    if (obj == oUra && gs.nGlyphUra == 2)
+      ch = 'A';
+    else if (obj == oPlu && gs.nGlyphPlu == 2)
+      ch = 'H';
+    else if (obj == oLil && gs.nGlyphLil == 2)
+      ch = -1;
+  } else if (nFont >= fiArial && obj <= oCore &&
+    wzObjectFontUnicode[obj] > 0) {
+    ch = wzObjectFontUnicode[obj];
+    nScale = FBetween(obj, oMer, oMar) ? 125 : 135;
+  }
+#ifdef EXPRESS
+  AdjustGlyph(&ch, &x, &y, &nFont, &nScale, obj, us.szExpFontObj);
+  if (!FBetween(nFont, 0, cFont-1))
+    ch = -1;
+#endif
+  fDoThin = gs.fThick && nFont == 0 && ch <= 0 && gi.nScale <= gi.nScaleT;
+  if (fDoThin)
+    DrawThick(fFalse);
+#ifdef WINANY
+  if (!gi.fFile && ch > 0) {
+    if (DrawGlyph(ch, x, y, nFont, nScale))
+      return;
+  }
+#endif
+#ifdef PS
+  if (gs.ft == ftPS && nFont > 0 && ch > 0) {
+    PsFont(nFont);
+    fprintf(gi.file, "%d %d(%s%c)center\n", x, y, PsEscape(ch), ch);
+    return;
+  }
+#endif
+#ifdef META
+  if (gs.ft == ftWmf && nFont > 0 && ch > 0) {
+    gi.nFontDes = nFont;
+    gi.kiTextDes = gi.kiCur;
+    gi.nAlignDes = 0x6 | 0x8 /* Center | Bottom */;
+    MetaSelect();
+    MetaTextOut(x, y + 7*gi.nScale, 1);
+    MetaWord(WFromBB(ch, 0));
+    return;
+  }
+#endif
+#ifdef SVG
+  if (gs.ft == ftSVG && nFont > 0 && ch > 0 && !FBetween(ch, 128, 159)) {
+    SvgText(NULL, ch, x, y, nFont, gi.nScale*(SVGMUL+4) * nScale/100, fTrue);
+    return;
+  }
+#endif
+
+  // Draw the object using Astrolog's turtle vector font.
+  AdjustCoordinates(&x, &y);
+
+  // Adjust glyph to alternate versions of it, if necessary.
+  if (!fCustomGlyph) {
+    if (obj == oUra) {
+      if (gs.nGlyphUra > 1)
+        obj = cObj + 1;
+    } else if (obj == oPlu) {
+      if (gs.nGlyphPlu > 1)
+        obj = cObj + 2 + (gs.nGlyphPlu > 2);
+    } else if (obj == oLil) {
+      if (gs.nGlyphLil > 1)
+        obj = cObj + 4;
+    } else if (obj == oVtx) {
+      if (gs.nGlyphVer > 1)
+        obj = cObj + 5;
+    } else if (obj == oEri) {
+      if (gs.nGlyphEri > 1)
+        obj = cObj + 6;
+    } else if (us.fHouseAngle && FAngle(obj))
+      obj = cObj + 7 + ((obj - cuspLo) / 3);
+  }
+
+  // Draw the object's glyph.
+  if (FOdd(gi.nScale) || !szDrawObject2[obj][0]) {
+    if (ChCap(szDrawObject[obj][0]) != 'T') {
+      DrawTurtle(szDrawObject[obj], x, y);
+      goto LDone;
+    }
+  } else {
+    if (ChCap(szDrawObject2[obj][0]) != 'T') {
+      // Draw special hi-res object glyph.
+      gi.nScale >>= 1;
+      DrawTurtle(szDrawObject2[obj], x, y);
+      gi.nScale <<= 1;
+      goto LDone;
+    }
+  }
+
+  // Normally can just draw the glyph, however some objects don't have glyphs
+  // (like stars) so for these draw their three letter abbreviation.
+
+  if (fNoText)
+    goto LDone;
+  sprintf(szGlyph, "%.3s", szObjDisp[obj]);
+  DrawSz(szGlyph, x, y, dtCent | dtScale2);
+LDone:
+  if (fDoThin)
+    DrawThick(fTrue);
+}
+
+
+// Set a single point on the screen, whose color is a grayscale based on the
+// passed in star magnitude. This is one of the few areas in the program that
+// works with more than a 16 color palette.
+
+void DrawStar(int x, int y, CONST ES *pes)
+{
+  KV kv;
+  int n;
+
+  // Determine star color.
+  if (!gs.fColor)
+    kv = KvFromKi(gi.kiCur);
+  else if (pes->ki != kDefault)
+    kv = KvFromKi(pes->ki);
+  else {
+    n = 255 - (int)((pes->mag - rStarLite) / rStarSpan * 224.0);
+    n = Min(n, 255); n = Max(n, 32);
+    if (gs.fInverse)
+      n = 255 - n;
+    kv = Rgb(n, n, n);
+  }
+
+  // Draw star point.
+#ifdef WINANY
+  if (!gi.fFile && wi.nScaleWin <= 1) {
+    SetPixel(wi.hdc, x, y, (COLORREF)kv);
+    if (FOdd(gs.nAllStar)) {
+      SetPixel(wi.hdc, x, y-1, (COLORREF)kv);
+      SetPixel(wi.hdc, x-1, y, (COLORREF)kv);
+      SetPixel(wi.hdc, x+1, y, (COLORREF)kv);
+      SetPixel(wi.hdc, x, y+1, (COLORREF)kv);
+    }
+    goto LAfter;
+  }
+#endif
+  if (gi.fFile && gs.ft == ftBmp && gi.fBmp) {
+    BmpSetXY(&gi.bmp, x, y, kv);
+    if (FOdd(gs.nAllStar)) {
+      BmpSetXY(&gi.bmp, x, y-1, kv);
+      BmpSetXY(&gi.bmp, x-1, y, kv);
+      BmpSetXY(&gi.bmp, x+1, y, kv);
+      BmpSetXY(&gi.bmp, x, y+1, kv);
+    }
+    goto LAfter;
+  }
+  if (pes->ki != kDefault)
+    DrawColor(pes->ki);
+  else
+    DrawColor(KStarB(pes->mag));
+  if (!FOdd(gs.nAllStar))
+    DrawPoint(x, y);
+  else
+    DrawSpot(x, y);
+
+  // Draw star's name label.
+LAfter:
+  if (!gs.fLabel || gs.nAllStar < 2)
+    return;
+  if (pes->ki != kDefault)
+    DrawColor(pes->ki);
+  else
+    DrawColor(KStarB(pes->mag));
+  DrawSz(pes->pchBest, x, y + 9*gi.nScaleT, dtCent);
+}
+
+
+//                                           C_OSTSisssqbssnbbtq111111PCCO
+CONST uchar szAspectFontAstro[cAspect3+1] = "!\"#$'&%()+*                 ";
+CONST uchar szAspectFontEnigma[cAspect3+1] =
+// COSTSisssq___b___ss___n___b___b___tq111111PCCO
+  "BCEDFHGIJK\316\325N\334\321\332\333|      OP  ";
+CONST uchar szAspectFontHamburg[cAspect3+1] =
+// COSTSisssq___b___ssnbbtq111111P___C___C___O
+  "qwretoiyu\230\232             \233\234\160 ";
+CONST uchar szAspectFontAstronomicon[cAspect3+1] =
+// C_OSTSisssq___bss___n___b___b___t___q___111111PCCO
+  "!\"#$%&'()\267*,\252\256\257\253\254\260      /-  ";
+//                                          COSTSisssqbssnbbtq111111PCCO
+CONST uchar szAspectFontStar[cAspect3+1] = "qpturowei                   ";
+CONST wchar wzAspectFontUnicode[cAspect3] = {
+  0x260c, 0x260d, 0x25a1, 0x25b3, 0x04ff, 0, 0, 0, 0,
+  'Q', 0x00b1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+// Draw the glyph of an aspect at particular coordinates on the screen.
+// Again either use Astrolog's turtle vector or a system font.
+
+void DrawAspect(int asp, int x, int y)
+{
+  int nFont, ch = -1, nScale = 100;
+  flag fDoThin;
+
+  nFont = szDrawAspect[asp] != szDrawAspectDef[asp] ||
+    szDrawAspect2[asp] != szDrawAspectDef2[asp] ? 0 : gs.nFontAsp;
+  if (us.fParallel && asp <= aOpp)
+    asp += cAspect;
+  if (nFont == fiAstro && szAspectFontAstro[asp-1] != ' ')
+    ch = szAspectFontAstro[asp-1];
+  else if (nFont == fiEnigma && szAspectFontEnigma[asp-1] != ' ') {
+    ch = szAspectFontEnigma[asp-1];
+    y -= gi.nScale;
+  } else if (nFont == fiHamburg && szAspectFontHamburg[asp-1] != ' ') {
+    ch = szAspectFontHamburg[asp-1];
+    // Filled in Opposite glyph is character 157, but it doesn't display.
+    y += gi.nScale;
+  } else if (nFont == fiAstronom && szAspectFontAstronomicon[asp-1] != ' ') {
+    ch = szAspectFontAstronomicon[asp-1];
+    y -= gi.nScale;
+    nScale = FBetween(asp, aSep, aQNv) ? 130 : 120;
+  } else if (FBetween(nFont, fiStarSan, fiStarSer) &&
+    szAspectFontStar[asp-1] != ' ') {
+    ch = szAspectFontStar[asp-1];
+  } else if (nFont >= fiArial && wzAspectFontUnicode[asp-1] != 0)
+    ch = wzAspectFontUnicode[asp-1];
+#ifdef EXPRESS
+  AdjustGlyph(&ch, &x, &y, &nFont, &nScale, asp, us.szExpFontAsp);
+  if (!FBetween(nFont, 0, cFont-1))
+    ch = -1;
+#endif
+  fDoThin = gs.fThick && nFont == 0 && ch <= 0 && gi.nScale <= gi.nScaleT;
+  if (fDoThin)
+    DrawThick(fFalse);
+#ifdef WINANY
+  if (!gi.fFile && ch > 0) {
+    if (DrawGlyph(ch, x, y, nFont, nScale))
+      return;
+  }
+#endif
+#ifdef PS
+  if (gs.ft == ftPS && nFont > 0 && ch > 0) {
+    PsFont(nFont);
+    fprintf(gi.file, "%d %d(%s%c)center\n", x, y, PsEscape(ch), ch);
+    return;
+  }
+#endif
+#ifdef META
+  if (gs.ft == ftWmf && nFont > 0 && ch > 0) {
+    gi.nFontDes = nFont;
+    gi.kiTextDes = gi.kiCur;
+    gi.nAlignDes = 0x6 | 0x8 /* Center | Bottom */;
+    MetaSelect();
+    MetaTextOut(x, y + 7*gi.nScale, 1);
+    MetaWord(WFromBB(ch, 0));
+    return;
+  }
+#endif
+#ifdef SVG
+  if (gs.ft == ftSVG && nFont > 0 && ch > 0 && !FBetween(ch, 128, 159)) {
+    SvgText(NULL, ch, x, y, nFont, gi.nScale*(SVGMUL+4) * nScale/100, fTrue);
+    return;
+  }
+#endif
+
+  // Draw the aspect using Astrolog's turtle vector font.
+  AdjustCoordinates(&x, &y);
+  if (FOdd(gi.nScale) || !szDrawAspect2[asp][0])
+    DrawTurtle(szDrawAspect[asp], x, y);
+  else {
+    gi.nScale >>= 1;
+    DrawTurtle(szDrawAspect2[asp], x, y);  // Special hi-res aspect glyphs.
+    gi.nScale <<= 1;
+  }
+  if (fDoThin)
+    DrawThick(fTrue);
+}
+
+
+// Draw a Nakshatra glyph or number at particular coordinates on the screen.
+
+void DrawNakshatra(int i, int x, int y)
+{
+  char sz[3];
+  int nFont = gs.nFontNak, ch = -1, nScale = 100, nSav;
+  flag fDoThin;
+#ifdef SVG
+  char *pch;
+#endif
+
+  if (nFont == fiNakshatr)
+    ch = 34 + i + (i >= 12) + (i >= 22);
+  else if (nFont == fiArial)
+    ch = (i <= 9 ? '0' + i : -i);
+#ifdef EXPRESS
+  AdjustGlyph(&ch, &x, &y, &nFont, &nScale, i, us.szExpFontNak);
+  if (!FBetween(nFont, 0, cFont-1))
+    ch = -1;
+#endif
+  fDoThin = gs.fThick && nFont == 0 && ch <= 0 && gi.nScale <= gi.nScaleT;
+  if (fDoThin)
+    DrawThick(fFalse);
+#ifdef WINANY
+  if (!gi.fFile && ch != -1) {
+    if (DrawGlyph(ch, x, y, nFont, nScale))
+      return;
+  }
+#endif
+#ifdef PS
+  if (gs.ft == ftPS && nFont > 0 && ch != -1) {
+    PsFont(nFont);
+    if (nFont < fiArial)
+      fprintf(gi.file, "%d %d(%s%c)center\n", x, y, PsEscape(ch), ch);
+    else
+      fprintf(gi.file, "%d %d(%d)center\n", x, y, i);
+    return;
+  }
+#endif
+#ifdef META
+  if (gs.ft == ftWmf && nFont > 0 && ch != -1) {
+    gi.nFontDes = nFont;
+    gi.kiTextDes = gi.kiCur;
+    gi.nAlignDes = 0x6 | 0x8 /* Center | Bottom */;
+    MetaSelect();
+    MetaTextOut(x, y+4*gi.nScale, 1 + (nFont >= fiArial && i > 9));
+    if (nFont < fiArial)
+      MetaWord(WFromBB(ch, 0));
+    else
+      MetaWord(WFromBB(i > 9 ? '1' : '0'+i, i > 9 ? '0'+i-10 : 0));
+    return;
+  }
+#endif
+#ifdef SVG
+  if (gs.ft == ftSVG && nFont > 0 && ch != -1) {
+    pch = NULL;
+    if (nFont >= fiArial) {
+      sprintf(sz, "%d", i);
+      pch = sz;
+    }
+    SvgText(pch, ch, x, y, nFont, gi.nScale*yFont * nScale/100, fTrue);
+    return;
+  }
+#endif
+  sprintf(sz, "%d", i);
+  nSav = gs.nFontTxt; gs.nFontTxt = gs.nFontNak;
+  DrawSz(sz, x, y + gi.nScaleT, dtScale2);
+  gs.nFontTxt = nSav;
+  if (fDoThin)
+    DrawThick(fTrue);
+}
+
+
+// Convert a string segment to a positive number, updating the string to
+// point beyond the number chars. Return 1 if the string doesn't point to
+// a numeric value. This is used by the DrawTurtle() routine to extract
+// motion vector quantities from draw strings, e.g. the "12" in "U12".
+
+int NFromPch(CONST char **ppch)
+{
+  int n = 0, ich = 0;
+
+  loop {
+    if (!FNumCh(**ppch))
+      return n > 0 ? n : (ich < 1 ? 1 : 0);
+    n = n*10 + (**ppch)-'0';
+    (*ppch)++;
+    ich++;
+  }
+}
+
+
+// This routine is used to draw complicated objects composed of lots of line
+// segments on the screen, such as all the glyphs and coastline pieces. It
+// is passed in a string of commands defining what to draw in relative
+// coordinates. This is a copy of the format of the BASIC draw command found
+// in PC's. For example, "U5R10D5L10" means go up 5 dots, right 10, down 5,
+// and left 10, which draws a box twice as wide as it is high.
+
+void DrawTurtle(CONST char *sz, int x0, int y0)
+{
+  int i, x, y, deltax, deltay;
+  flag fBlank, fNoupdate;
+  char szErr[cchSzDef], chCmd;
+
+  gi.xTurtle = x0; gi.yTurtle = y0;
+  while (chCmd = ChCap(*sz)) {
+    sz++;
+
+    // 'B' prefixing a command means just move the cursor, and don't draw.
+
+    if (fBlank = (chCmd == 'B')) {
+      chCmd = ChCap(*sz);
+      sz++;
+    }
+
+    // 'N' prefixing a command means don't update cursor when done drawing.
+
+    if (fNoupdate = (chCmd == 'N')) {
+      chCmd = ChCap(*sz);
+      sz++;
+    }
+
+    // Process the eight directional commands.
+
+    switch (chCmd) {
+    case 'U': deltax =  0; deltay = -1; break;      // Up
+    case 'D': deltax =  0; deltay =  1; break;      // Down
+    case 'L': deltax = -1; deltay =  0; break;      // Left
+    case 'R': deltax =  1; deltay =  0; break;      // Right
+    case 'E': deltax =  1; deltay = -1; break;      // NorthEast
+    case 'F': deltax =  1; deltay =  1; break;      // SouthEast
+    case 'G': deltax = -1; deltay =  1; break;      // SouthWest
+    case 'H': deltax = -1; deltay = -1; break;      // NorthWest
+    default:
+      deltax = deltay = 0;
+      sprintf(szErr, "Bad draw turtle action character: '%c'", chCmd);
+      PrintError(szErr);
+    }
+    x = gi.xTurtle;
+    y = gi.yTurtle;
+    i = NFromPch(&sz)*gi.nScale;    // Figure out how far to draw.
+    if (fBlank) {
+      gi.xTurtle += deltax*i;
+      gi.yTurtle += deltay*i;
+    } else {
+      gi.xTurtle += deltax*i;
+      gi.yTurtle += deltay*i;
+      DrawLine(x, y, gi.xTurtle, gi.yTurtle);
+      if (fNoupdate) {
+        gi.xTurtle = x;
+        gi.yTurtle = y;
+      }
+    }
+  }
+}
+
+
+#ifdef ATLAS
+// Return the color to use for displaying an atlas city.
+
+int KiCity(int iae)
+{
+  real zon;
+  KI ki = kOrangeB;
+  int i;
+  CI ci;
+#ifdef WIN
+  flag fSav;
+#endif
+
+  if (!FEnsureAtlas())
+    return fFalse;
+
+  // Initialize array of offsets for each time zone area, at chart's time.
+  if (iae < 0) {
+    if (gs.nLabelCity == 4 && FEnsureTimezoneChanges()) {
+      if (is.rgzonCol == NULL) {
+        is.rgzonCol = RgAllocate(iznMax, real, "timezone color");
+        if (is.rgzonCol == NULL)
+          return ~0;
+      }
+      ci = ciMain;
+#ifdef WIN
+      fSav = wi.fNoPopup; wi.fNoPopup = fTrue;
+#endif
+      for (i = 0; i < iznMax; i++) {
+        DisplayTimezoneChanges(i, 0, &ci);
+        is.rgzonCol[i] = ci.zon - ci.dst;
+      }
+#ifdef WIN
+      wi.fNoPopup = fSav;
+#endif
+    }
+    return ki;
+  }
+
+  // Determine color of this city.
+  if (gs.nLabelCity <= 2) {
+    i = is.rgae[iae].icn;
+    if (gs.nLabelCity == 2 && (i == icnUS || i == icnCA))
+      ki = kRainbowB[is.rgae[iae].istate % 7 + 1];
+    else
+      ki = kRainbowB[i == icnUS ? 6 : (i == icnFR ? 5 : i % 7 + 1)];
+  } else if (gs.nLabelCity <= 4 && FEnsureTimezoneChanges()) {
+    i = is.rgae[iae].izn;
+    if (gs.nLabelCity == 4 && is.rgzonCol != NULL)
+      zon = is.rgzonCol[i];
+    else
+      zon = ZondefFromIzn(i);
+    if (zon == zonLMT || zon == zonLAT)
+      ki = kDkGrayB;
+    else if (zon == RFloor(zon)) {
+      i = (int)(zon + rDegMax) % 6;
+      ki = kRainbowB[i + (i > 0) + 1];
+    } else
+      ki = kMagentaB;
+  } else
+    ki = kRainbowB[iae % 7 + 1];
+#ifdef EXPRESS
+  // Adjust color if AstroExpression says to do so.
+  if (!us.fExpOff && FSzSet(us.szExpCity)) {
+    ExpSetN(iLetterW, iae);
+    ExpSetR(iLetterX, is.rgae[iae].lon);
+    ExpSetR(iLetterY, is.rgae[iae].lat);
+    ExpSetN(iLetterZ, ki);
+    ParseExpression(us.szExpCity);
+    ki = NExpGet(iLetterZ);
+    if (!FValidColorA(ki))
+      ki = ~0;
+  }
+#endif
+  return ki;
+}
+#endif // ATLAS
+#endif // GRAPH
+
+/* xgeneral.cpp */
