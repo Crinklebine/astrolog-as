@@ -39,14 +39,14 @@ location and time-zone switches, before relying on "current moment" charts.
 For example, look up a city using the bundled atlas and timezone data:
 
 ```sh
-./astrolog -n -zN "Douglas, Isle of Man" -v
+./astrolog -n -zN "Seattle, WA, USA" -v
 ```
 
 Generate chart graphics without X11:
 
 ```sh
-./astrolog -n -zN "Douglas, Isle of Man" -XV -Xo chart.svg
-./astrolog -n -zN "Douglas, Isle of Man" -Xbp -Xo chart.png
+./astrolog -n -zN "Seattle, WA, USA" -XV -Xo chart.svg
+./astrolog -n -zN "Seattle, WA, USA" -Xbp -Xo chart.png
 ```
 
 ## Optional interactive windows

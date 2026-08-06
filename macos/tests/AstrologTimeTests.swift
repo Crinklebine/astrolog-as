@@ -103,6 +103,13 @@ enum AstrologTimeTests {
       expect(place.timeZoneIdentifier == "Europe/Isle_of_Man", "expected IANA Isle of Man timezone")
     }
 
+    test("Atlas resolves Seattle default") {
+      let place = try AtlasResolver.resolve("Seattle, WA, USA", atlasURL: atlasURL())
+      expect(place.name == "Seattle", "expected Seattle")
+      expect(place.regionCode == "wa", "expected Washington state")
+      expect(place.timeZoneIdentifier == "America/Los_Angeles", "expected Pacific timezone")
+    }
+
     test("Astrolog receives local civil time, standard zone, and separate DST") {
       let place = try AtlasResolver.resolve("New York, NY, USA", atlasURL: atlasURL())
       let moment = try moment("2026-08-05T21:57:00Z", zone: place.timeZoneIdentifier)

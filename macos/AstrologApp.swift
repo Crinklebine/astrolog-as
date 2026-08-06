@@ -134,10 +134,10 @@ enum AstrologRenderer {
 
 @MainActor
 final class ChartViewModel: ObservableObject {
-  @Published var location = "Douglas, Isle of Man"
+  @Published var location = "Seattle, WA, USA"
   @Published var useCurrentMoment = true
   @Published var chartDate = Date()
-  @Published var displayTimeZone = TimeZone(identifier: "Europe/Isle_of_Man") ?? .current
+  @Published var displayTimeZone = TimeZone(identifier: "America/Los_Angeles") ?? .current
   @Published var chartStyle = ChartStyle.wheel
   @Published var canvasSize = CanvasSize.compact
   @Published var lightBackground = false
@@ -151,7 +151,7 @@ final class ChartViewModel: ObservableObject {
   var isBusy: Bool { isWorking || isUpdatingAppearance }
 
   let suggestedPlaces = [
-    "Douglas, Isle of Man",
+    "Seattle, WA, USA",
     "London, England",
     "New York, NY, USA",
     "Los Angeles, CA, USA",
