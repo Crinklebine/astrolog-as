@@ -50,6 +50,7 @@ xcrun swiftc \
   -framework WebKit \
   macos/AstrologTime.swift \
   macos/ChartResult.swift \
+  macos/ChartRequest.swift \
   macos/AstrologApp.swift \
   -o "$contents_path/MacOS/Astrolog"
 

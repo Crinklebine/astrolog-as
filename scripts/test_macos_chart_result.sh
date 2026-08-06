@@ -41,6 +41,7 @@ xcrun swiftc \
   -target arm64-apple-macos14.0 \
   macos/AstrologTime.swift \
   macos/ChartResult.swift \
+  macos/ChartRequest.swift \
   macos/tests/AstrologChartResultTests.swift \
   -o "$build_path/AstrologChartResultTests"
 

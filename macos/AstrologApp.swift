@@ -3,79 +3,6 @@ import SwiftUI
 import UniformTypeIdentifiers
 import WebKit
 
-enum ChartStyle: String, CaseIterable, Identifiable {
-  case wheel = "Birth Wheel"
-  case aspects = "Aspect Grid"
-  case world = "World Map"
-  case solarSystem = "Solar System"
-
-  var id: String { rawValue }
-
-  var symbol: String {
-    switch self {
-    case .wheel: return "circle.circle"
-    case .aspects: return "square.grid.3x3"
-    case .world: return "globe.europe.africa"
-    case .solarSystem: return "sun.max"
-    }
-  }
-
-  var engineArguments: [String] {
-    switch self {
-    case .wheel: return []
-    case .aspects: return ["-g"]
-    case .world: return ["-L"]
-    case .solarSystem: return ["-S"]
-    }
-  }
-}
-
-enum CanvasSize: String, CaseIterable, Identifiable {
-  case compact = "Compact"
-  case standard = "Standard"
-  case large = "Large"
-
-  var id: String { rawValue }
-
-  var dimensions: (Int, Int) {
-    switch self {
-    case .compact: return (700, 560)
-    case .standard: return (900, 720)
-    case .large: return (1200, 960)
-    }
-  }
-}
-
-struct ChartRequest {
-  let requestedLocation: String
-  let sourceMode: AstrologSourceMode
-  let moment: AstrologMoment
-  let place: AstrologPlace
-  let style: ChartStyle
-  let canvas: CanvasSize
-  let lightBackground: Bool
-
-  var chartArguments: [String] {
-    astrologInputArguments(
-      moment: moment,
-      place: place,
-      chartName: sourceMode == .currentMoment ? "Current moment" : "Custom chart")
-  }
-}
-
-struct CalculatedChart {
-  let request: ChartRequest
-  let result: ChartResult
-}
-
-struct RenderedChart {
-  let calculation: CalculatedChart
-  let svgURL: URL
-
-  var request: ChartRequest { calculation.request }
-  var result: ChartResult { calculation.result }
-}
-
 enum AstrologAppError: LocalizedError {
   case missingEngine
   case engineFailed(String)
@@ -212,13 +139,16 @@ final class ChartViewModel: ObservableObject {
   @Published var chartDate = Date()
   @Published var displayTimeZone = TimeZone(identifier: "Europe/Isle_of_Man") ?? .current
   @Published var chartStyle = ChartStyle.wheel
-  @Published var canvasSize = CanvasSize.standard
-  @Published var lightBackground = true
+  @Published var canvasSize = CanvasSize.compact
+  @Published var lightBackground = false
   @Published var selectedResult = 0
   @Published var generatedChart: RenderedChart?
   @Published var isWorking = false
+  @Published private(set) var isUpdatingAppearance = false
   @Published var statusText = "Ready"
   @Published var errorMessage: String?
+
+  var isBusy: Bool { isWorking || isUpdatingAppearance }
 
   let suggestedPlaces = [
     "Douglas, Isle of Man",
@@ -265,6 +195,7 @@ final class ChartViewModel: ObservableObject {
   }
 
   func generate(currentInstant: Date = Date()) async {
+    guard !isBusy else { return }
     guard !location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
       errorMessage = "Enter a city or place before generating the chart."
       return
@@ -288,6 +219,28 @@ final class ChartViewModel: ObservableObject {
       statusText = "Couldn’t generate chart"
     }
     isWorking = false
+  }
+
+  func updateChartBackground() async {
+    guard let chart = generatedChart, !isBusy,
+          chart.request.lightBackground != lightBackground else { return }
+
+    isUpdatingAppearance = true
+    errorMessage = nil
+    statusText = "Updating background…"
+    let request = chart.request.withLightBackground(lightBackground)
+    let calculation = CalculatedChart(request: request, result: chart.result)
+    do {
+      generatedChart = try await Task.detached(priority: .userInitiated) {
+        try AstrologRenderer.render(calculation)
+      }.value
+      statusText = "Background updated"
+    } catch {
+      lightBackground = chart.request.lightBackground
+      errorMessage = error.localizedDescription
+      statusText = "Couldn’t update background"
+    }
+    isUpdatingAppearance = false
   }
 
   func exportSVG() {
@@ -602,6 +555,10 @@ struct SidebarView: View {
           }
         }
         Toggle("Light background", isOn: $model.lightBackground)
+          .disabled(model.isBusy)
+          .onChange(of: model.lightBackground) {
+            Task { await model.updateChartBackground() }
+          }
       }
 
       Section {
@@ -691,7 +648,10 @@ struct ChartDetailView: View {
 
       Divider()
       HStack {
-        Label(model.statusText, systemImage: model.isWorking ? "clock" : "checkmark.circle")
+        Label(
+          model.statusText,
+          systemImage: model.isUpdatingAppearance
+            ? "paintbrush" : (model.isWorking ? "clock" : "checkmark.circle"))
           .font(.caption)
           .foregroundStyle(.secondary)
         Spacer()
@@ -709,7 +669,7 @@ struct ChartDetailView: View {
         } label: {
           Label("Export SVG", systemImage: "square.and.arrow.up")
         }
-        .disabled(model.generatedChart == nil || model.isWorking)
+        .disabled(model.generatedChart == nil || model.isBusy)
 
         Menu {
           Button("PNG Image…") { Task { await model.exportPNG() } }
@@ -717,7 +677,7 @@ struct ChartDetailView: View {
         } label: {
           Label("More Exports", systemImage: "ellipsis.circle")
         }
-        .disabled(model.generatedChart == nil || model.isWorking)
+        .disabled(model.generatedChart == nil || model.isBusy)
       }
     }
   }

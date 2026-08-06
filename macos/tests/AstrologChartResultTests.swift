@@ -89,6 +89,33 @@ enum AstrologChartResultTests {
       near(strongest.power, 19.54, tolerance: 0.001, "strongest aspect power changed")
     }
 
+    test("Background rerender preserves the calculated moment") {
+      let place = AstrologPlace(
+        name: "Douglas", regionCode: "IM", timeZoneIdentifier: "Europe/Isle_of_Man",
+        longitudeDegreesWest: 4.4833, latitudeDegreesNorth: 54.15)
+      let moment = try astrologMoment(
+        for: parseISO("2026-01-05T21:57:00Z"),
+        at: requireZone(place.timeZoneIdentifier))
+      let original = ChartRequest(
+        requestedLocation: "Douglas, Isle of Man",
+        sourceMode: .currentMoment,
+        moment: moment,
+        place: place,
+        style: .wheel,
+        canvas: .compact,
+        lightBackground: false)
+      let updated = original.withLightBackground(true)
+
+      expect(updated.lightBackground, "background choice did not change")
+      expect(updated.moment.instant == original.moment.instant, "rerender changed the chart instant")
+      expect(updated.moment.localCivilDescription == original.moment.localCivilDescription,
+             "rerender changed the chart civil time")
+      expect(updated.requestedLocation == original.requestedLocation, "rerender changed the place query")
+      expect(updated.sourceMode == original.sourceMode, "rerender changed the source mode")
+      expect(updated.style == original.style, "rerender changed the chart style")
+      expect(updated.canvas == original.canvas, "rerender changed the detail level")
+    }
+
     test("Malformed engine positions cannot create a partial ChartResult") {
       let place = AstrologPlace(
         name: "Douglas", regionCode: "IM", timeZoneIdentifier: "Europe/Isle_of_Man",
