@@ -116,6 +116,28 @@ enum AstrologChartResultTests {
       expect(updated.canvas == original.canvas, "rerender changed the detail level")
     }
 
+    test("Wheel rendering uses the FLTK elemental palette") {
+      let place = AstrologPlace(
+        name: "Seattle", regionCode: "wa", timeZoneIdentifier: "America/Los_Angeles",
+        longitudeDegreesWest: 122.3321, latitudeDegreesNorth: 47.6062)
+      let moment = try astrologMoment(
+        for: parseISO("2026-08-05T21:57:00Z"),
+        at: requireZone(place.timeZoneIdentifier))
+      let wheel = ChartRequest(
+        requestedLocation: "Seattle, WA, USA", sourceMode: .manual,
+        moment: moment, place: place, style: .wheel, canvas: .compact,
+        lightBackground: false)
+      let grid = ChartRequest(
+        requestedLocation: "Seattle, WA, USA", sourceMode: .manual,
+        moment: moment, place: place, style: .aspects, canvas: .compact,
+        lightBackground: false)
+
+      expect(wheel.graphicEffectArguments == ["-Xv", "1", "-YXk", "-YXk0"],
+             "wheel is missing the standard elemental fill settings")
+      expect(grid.graphicEffectArguments.isEmpty,
+             "wheel-only color settings leaked into another chart style")
+    }
+
     test("Malformed engine positions cannot create a partial ChartResult") {
       let place = AstrologPlace(
         name: "Douglas", regionCode: "IM", timeZoneIdentifier: "Europe/Isle_of_Man",

@@ -103,25 +103,36 @@ enum AstrologRenderer {
       .appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: previewDirectory, withIntermediateDirectories: true)
     let svgURL = previewDirectory.appendingPathComponent("chart.svg")
+    let previewURL = previewDirectory.appendingPathComponent("chart.png")
     let size = request.canvas.dimensions
 
     var graphicArguments = request.chartArguments + request.style.engineArguments
+      + request.graphicEffectArguments
     graphicArguments += ["-Xx0", "-Xw", String(size.0), String(size.1)]
     if request.lightBackground { graphicArguments.append("-Xr") }
     graphicArguments += ["-XV", "-Xo", svgURL.path]
     _ = try AstrologEngine.run(arguments: graphicArguments)
 
-    guard FileManager.default.fileExists(atPath: svgURL.path) else {
+    var previewArguments = request.chartArguments + request.style.engineArguments
+      + request.graphicEffectArguments
+    previewArguments += ["-Xx0", "-Xw", String(size.0), String(size.1)]
+    if request.lightBackground { previewArguments.append("-Xr") }
+    previewArguments += ["-Xbp", "-Xo", previewURL.path]
+    _ = try AstrologEngine.run(arguments: previewArguments)
+
+    guard FileManager.default.fileExists(atPath: svgURL.path),
+          FileManager.default.fileExists(atPath: previewURL.path) else {
       throw AstrologAppError.missingOutput
     }
 
-    return RenderedChart(calculation: calculation, svgURL: svgURL)
+    return RenderedChart(calculation: calculation, svgURL: svgURL, previewURL: previewURL)
   }
 
   static func generatePNG(_ calculation: CalculatedChart, at outputURL: URL) throws {
     let request = calculation.request
     let size = request.canvas.dimensions
     var arguments = request.chartArguments + request.style.engineArguments
+      + request.graphicEffectArguments
     arguments += ["-Xx0", "-Xw", String(size.0), String(size.1)]
     if request.lightBackground { arguments.append("-Xr") }
     arguments += ["-Xbp", "-Xo", outputURL.path]
@@ -351,8 +362,8 @@ final class ChartWebView: WKWebView {
 
   @objc private func copyChart(_ sender: Any?) {
     guard let chartFileURL,
-          let svgData = try? Data(contentsOf: chartFileURL),
-          let image = NSImage(data: svgData),
+          let imageData = try? Data(contentsOf: chartFileURL),
+          let image = NSImage(data: imageData),
           let rasterImage = rasterizedClipboardImage(from: image),
           let tiffData = rasterImage.tiffRepresentation else {
       NSSound.beep()
@@ -361,7 +372,9 @@ final class ChartWebView: WKWebView {
 
     let pasteboard = NSPasteboard.general
     let svgType = NSPasteboard.PasteboardType("public.svg-image")
-    var types: [NSPasteboard.PasteboardType] = [svgType, .tiff]
+    let isSVG = chartFileURL.pathExtension.lowercased() == "svg"
+    var types: [NSPasteboard.PasteboardType] = [.tiff]
+    if isSVG { types.insert(svgType, at: 0) }
     var pngData: Data?
     if let bitmap = NSBitmapImageRep(data: tiffData) {
       pngData = bitmap.representation(using: .png, properties: [:])
@@ -370,7 +383,7 @@ final class ChartWebView: WKWebView {
 
     pasteboard.clearContents()
     pasteboard.declareTypes(types, owner: nil)
-    pasteboard.setData(svgData, forType: svgType)
+    if isSVG { pasteboard.setData(imageData, forType: svgType) }
     pasteboard.setData(tiffData, forType: .tiff)
     if let pngData { pasteboard.setData(pngData, forType: .png) }
   }
@@ -404,7 +417,7 @@ final class ChartWebView: WKWebView {
   }
 }
 
-struct SVGPreview: NSViewRepresentable {
+struct ChartPreview: NSViewRepresentable {
   let fileURL: URL
 
   func makeNSView(context: Context) -> ChartWebView {
@@ -427,7 +440,7 @@ struct ChartImageView: View {
   let chart: RenderedChart
 
   var body: some View {
-    SVGPreview(fileURL: chart.svgURL)
+    ChartPreview(fileURL: chart.previewURL)
       .background(Color(nsColor: .windowBackgroundColor))
       .accessibilityLabel(
         "\(chart.request.style.rawValue) for \(chart.result.metadata.place.displayName), " +

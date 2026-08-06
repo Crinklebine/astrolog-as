@@ -59,6 +59,11 @@ struct ChartRequest {
       chartName: sourceMode == .currentMoment ? "Current moment" : "Custom chart")
   }
 
+  var graphicEffectArguments: [String] {
+    guard style == .wheel else { return [] }
+    return ["-Xv", "1", "-YXk", "-YXk0"]
+  }
+
   func withLightBackground(_ lightBackground: Bool) -> ChartRequest {
     ChartRequest(
       requestedLocation: requestedLocation,
@@ -79,6 +84,7 @@ struct CalculatedChart {
 struct RenderedChart {
   let calculation: CalculatedChart
   let svgURL: URL
+  let previewURL: URL
 
   var request: ChartRequest { calculation.request }
   var result: ChartResult { calculation.result }
