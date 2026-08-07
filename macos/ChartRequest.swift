@@ -25,7 +25,7 @@ struct LastPlaceStore {
 }
 
 enum ChartStyle: String, CaseIterable, Identifiable {
-  case wheel = "Birth Wheel"
+  case wheel = "Wheel"
   case aspects = "Aspect Grid"
   case world = "World Map"
   case solarSystem = "Solar System"
