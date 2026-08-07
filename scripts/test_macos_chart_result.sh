@@ -22,7 +22,7 @@ if [[ "$developer_dir" == */CommandLineTools ]]; then
   fi
 fi
 
-app_path="$project_dir/dist/Astrolog.app"
+app_path="$project_dir/dist/Astrolog-AS.app"
 engine_path="$app_path/Contents/Resources/astrolog-cli"
 resources_path="$app_path/Contents/Resources"
 if [[ ! -x "$engine_path" ]]; then

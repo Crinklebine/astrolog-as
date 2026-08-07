@@ -1,0 +1,42 @@
+name: Build Astrolog-AS DMG
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-dmg:
+    name: Build Apple Silicon DMG
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Build Astrolog-AS
+        run: ./scripts/build_macos_app.sh
+
+      - name: Run timezone tests
+        run: ./scripts/test_macos_time.sh
+
+      - name: Run ChartResult regression tests
+        run: ./scripts/test_macos_chart_result.sh
+
+      - name: Verify Apple Silicon binaries
+        run: |
+          test "$(lipo -archs dist/Astrolog-AS.app/Contents/MacOS/Astrolog-AS)" = "arm64"
+          test "$(lipo -archs dist/Astrolog-AS.app/Contents/Resources/astrolog-cli)" = "arm64"
+
+      - name: Package DMG
+        run: ./scripts/package_macos_dmg.sh
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: Astrolog-AS-arm64
+          path: dist/Astrolog-AS-*-arm64.dmg
+          if-no-files-found: error
+          retention-days: 30

@@ -5,25 +5,25 @@
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleDisplayName</key>
-  <string>Astrolog</string>
+  <string>Astrolog-AS</string>
   <key>CFBundleExecutable</key>
-  <string>Astrolog</string>
+  <string>Astrolog-AS</string>
   <key>CFBundleIconFile</key>
   <string>AppIcon</string>
   <key>CFBundleIconName</key>
   <string>AppIcon</string>
   <key>CFBundleIdentifier</key>
-  <string>org.crinklebine.astrolog</string>
+  <string>org.crinklebine.astrolog-as</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
-  <string>Astrolog</string>
+  <string>Astrolog-AS</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
   <string>8.00</string>
   <key>CFBundleVersion</key>
-	<string>800.13</string>
+	<string>800.14</string>
   <key>LSApplicationCategoryType</key>
   <string>public.app-category.lifestyle</string>
   <key>LSMinimumSystemVersion</key>
@@ -31,7 +31,7 @@
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>NSHumanReadableCopyright</key>
-  <string>Astrolog engine © 1991–2026 Walter D. Pullen. macOS interface by Crinklebine.</string>
+  <string>Astrolog-AS interface by Crinklebine. Astrolog engine © 1991–2026 Walter D. Pullen.</string>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
 </dict>

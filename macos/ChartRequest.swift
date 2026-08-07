@@ -5,16 +5,23 @@ struct LastPlaceStore {
   private static let locationKey = "lastSuccessfulChartLocation"
 
   private let defaults: UserDefaults
+  private let legacyDefaults: UserDefaults?
 
-  init(defaults: UserDefaults = .standard) {
+  init(
+    defaults: UserDefaults = .standard,
+    legacyDefaults: UserDefaults? = UserDefaults(suiteName: "org.crinklebine.astrolog")
+  ) {
     self.defaults = defaults
+    self.legacyDefaults = legacyDefaults
   }
 
   var location: String {
-    let saved = defaults.string(forKey: Self.locationKey)?
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-    guard let saved, !saved.isEmpty else { return Self.defaultLocation }
-    return saved
+    for source in [defaults, legacyDefaults].compactMap({ $0 }) {
+      let saved = source.string(forKey: Self.locationKey)?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      if let saved, !saved.isEmpty { return saved }
+    }
+    return Self.defaultLocation
   }
 
   func save(_ location: String) {

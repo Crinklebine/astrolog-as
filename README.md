@@ -1,8 +1,9 @@
-# Astrolog 8.00 on macOS
+# Astrolog-AS
 
-This source tree is configured for a native macOS command-line build. It keeps
-Astrolog's graphics engine and SVG, PNG, PostScript, and bitmap exports enabled,
-while disabling the optional X11 window layer.
+Astrolog-AS is a native Apple Silicon macOS interface by Crinklebine around
+Walter D. Pullen's Astrolog 8.00 calculation and graphics engine. This source
+tree also supports a native command-line build with SVG, PNG, PostScript, and
+bitmap exports enabled while disabling the optional X11 window layer.
 
 ## Requirements
 
@@ -63,7 +64,7 @@ Build the self-contained Apple Silicon app with:
 ./scripts/build_macos_app.sh
 ```
 
-The result is `dist/Astrolog.app`. It embeds the calculation engine and runtime
+The result is `dist/Astrolog-AS.app`. It embeds the calculation engine and runtime
 data, provides native controls and chart preview, and does not require XQuartz.
 
 Run the fixed-instant timezone and daylight-saving tests with:
@@ -78,3 +79,11 @@ reference charts with:
 ```sh
 ./scripts/test_macos_chart_result.sh
 ```
+
+## On-demand DMG
+
+The `Build Astrolog-AS DMG` GitHub Actions workflow can be started manually
+from the repository's Actions tab. It builds and tests the native Apple Silicon
+app, packages a versioned DMG, and uploads it as the `Astrolog-AS-arm64`
+workflow artifact for 30 days. The artifact is ad-hoc signed for personal or
+internal use; Developer ID signing and Apple notarization are not configured.

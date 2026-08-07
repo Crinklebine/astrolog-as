@@ -256,8 +256,8 @@ final class ChartViewModel: ObservableObject {
   func exportSVG() {
     guard let chart = generatedChart else { return }
     let panel = NSSavePanel()
-    panel.title = "Export Astrolog Chart"
-    panel.nameFieldStringValue = "astrolog-chart.svg"
+    panel.title = "Export Astrolog-AS Chart"
+    panel.nameFieldStringValue = "astrolog-as-chart.svg"
     panel.allowedContentTypes = [.svg]
     guard panel.runModal() == .OK, let destination = panel.url else { return }
     do {
@@ -271,8 +271,8 @@ final class ChartViewModel: ObservableObject {
   func exportReport() {
     guard let chart = generatedChart else { return }
     let panel = NSSavePanel()
-    panel.title = "Export Astrolog Report"
-    panel.nameFieldStringValue = "astrolog-report.txt"
+    panel.title = "Export Astrolog-AS Report"
+    panel.nameFieldStringValue = "astrolog-as-report.txt"
     panel.allowedContentTypes = [.plainText]
     guard panel.runModal() == .OK, let destination = panel.url else { return }
     do {
@@ -286,8 +286,8 @@ final class ChartViewModel: ObservableObject {
   func exportPNG() async {
     guard let chart = generatedChart else { return }
     let panel = NSSavePanel()
-    panel.title = "Export Astrolog Chart"
-    panel.nameFieldStringValue = "astrolog-chart.png"
+    panel.title = "Export Astrolog-AS Chart"
+    panel.nameFieldStringValue = "astrolog-as-chart.png"
     panel.allowedContentTypes = [.png]
     guard panel.runModal() == .OK, let destination = panel.url else { return }
 
@@ -602,7 +602,7 @@ struct SidebarView: View {
       }
 
       Section("About") {
-        Text("Astrolog 8.00 calculation engine by Walter D. Pullen. Native macOS interface by Crinklebine.")
+        Text("Astrolog-AS native macOS interface by Crinklebine. Astrolog 8.00 calculation engine by Walter D. Pullen.")
           .font(.caption)
           .foregroundStyle(.secondary)
       }
@@ -619,7 +619,7 @@ struct ChartDetailView: View {
     VStack(spacing: 0) {
       HStack(alignment: .center) {
         VStack(alignment: .leading, spacing: 3) {
-          Text(model.generatedChart?.request.style.rawValue ?? "Astrolog")
+          Text(model.generatedChart?.request.style.rawValue ?? "Astrolog-AS")
             .font(.title2.weight(.semibold))
           Text(model.generatedChart?.result.metadata.heading ?? "Create a chart to begin")
             .font(.caption)
@@ -667,7 +667,7 @@ struct ChartDetailView: View {
           .font(.caption)
           .foregroundStyle(.secondary)
         Spacer()
-        Text("Astrolog 8.00 · Apple Silicon")
+        Text("Astrolog-AS · Astrolog 8.00 engine · Apple Silicon")
           .font(.caption2)
           .foregroundStyle(.tertiary)
       }
@@ -713,7 +713,7 @@ struct ContentView: View {
 }
 
 @main
-struct AstrologMacApp: App {
+struct AstrologASMacApp: App {
   var body: some Scene {
     WindowGroup {
       ContentView()

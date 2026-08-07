@@ -140,18 +140,29 @@ enum AstrologChartResultTests {
 
     test("Last successful place persists with a Seattle fallback") {
       let suiteName = "AstrologChartResultTests.\(UUID().uuidString)"
+      let legacySuiteName = "AstrologChartResultTests.Legacy.\(UUID().uuidString)"
       guard let defaults = UserDefaults(suiteName: suiteName) else {
         throw TestError("could not create isolated defaults")
       }
-      defer { defaults.removePersistentDomain(forName: suiteName) }
-      let store = LastPlaceStore(defaults: defaults)
+      guard let legacyDefaults = UserDefaults(suiteName: legacySuiteName) else {
+        throw TestError("could not create isolated legacy defaults")
+      }
+      defer {
+        defaults.removePersistentDomain(forName: suiteName)
+        legacyDefaults.removePersistentDomain(forName: legacySuiteName)
+      }
+      let store = LastPlaceStore(defaults: defaults, legacyDefaults: legacyDefaults)
 
       expect(store.location == "Seattle, WA, USA", "first launch did not default to Seattle")
       store.save("  New York, NY, USA  ")
-      expect(LastPlaceStore(defaults: defaults).location == "New York, NY, USA",
+      expect(LastPlaceStore(defaults: defaults, legacyDefaults: legacyDefaults).location == "New York, NY, USA",
              "last successful place was not restored")
       store.save("   ")
       expect(store.location == "New York, NY, USA", "an empty place replaced the saved value")
+
+      defaults.removeObject(forKey: "lastSuccessfulChartLocation")
+      LastPlaceStore(defaults: legacyDefaults, legacyDefaults: nil).save("London, England")
+      expect(store.location == "London, England", "legacy app preference was not migrated")
     }
 
     test("Malformed engine positions cannot create a partial ChartResult") {

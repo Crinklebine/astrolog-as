@@ -3,7 +3,7 @@ set -euo pipefail
 
 script_dir=${0:A:h}
 project_dir=${script_dir:h}
-app_path="$project_dir/dist/Astrolog.app"
+app_path="$project_dir/dist/Astrolog-AS.app"
 contents_path="$app_path/Contents"
 resources_path="$contents_path/Resources"
 build_path="$project_dir/build/macos"
@@ -14,7 +14,7 @@ compiled_assets_path="$build_path/compiled-assets"
 cd "$project_dir"
 
 jobs=$(sysctl -n hw.ncpu 2>/dev/null || echo 8)
-make -j"$jobs"
+make -j"$jobs" ARCHFLAGS="-arch arm64"
 
 rm -rf "$app_path" "$build_path"
 mkdir -p "$contents_path/MacOS" "$resources_path" "$build_path"
@@ -52,7 +52,7 @@ xcrun swiftc \
   macos/ChartResult.swift \
   macos/ChartRequest.swift \
   macos/AstrologApp.swift \
-  -o "$contents_path/MacOS/Astrolog"
+  -o "$contents_path/MacOS/Astrolog-AS"
 
 xcrun swiftc \
   -swift-version 5 \
@@ -80,7 +80,7 @@ cp "$compiled_assets_path/Assets.car" "$resources_path/Assets.car"
 
 cp macos/Info.plist "$contents_path/Info.plist"
 cp astrolog "$resources_path/astrolog-cli"
-chmod 755 "$contents_path/MacOS/Astrolog" "$resources_path/astrolog-cli"
+chmod 755 "$contents_path/MacOS/Astrolog-AS" "$resources_path/astrolog-cli"
 
 runtime_files=(
   astrolog.as atlas.as timezone.as astexo.csv earth.bmp sefstars.txt seorbel.txt

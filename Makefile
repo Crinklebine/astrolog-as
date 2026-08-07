@@ -29,12 +29,13 @@ OBJS = astrolog.o atlas.o calc.o charts0.o charts1.o charts2.o charts3.o\
 CXX ?= c++
 LIBS = -lm
 CXXFLAGS ?= -O2
+ARCHFLAGS ?=
 CXXFLAGS += -Wno-write-strings -Wno-narrowing -Wno-comment \
- -Wno-deprecated-declarations
+ -Wno-deprecated-declarations $(ARCHFLAGS)
 RM = rm -f
 
 $(NAME): $(OBJS)
-	$(CXX) -o $(NAME) $(OBJS) $(LIBS)
+	$(CXX) $(ARCHFLAGS) -o $(NAME) $(OBJS) $(LIBS)
 
 clean:
 	$(RM) $(OBJS) $(NAME)
