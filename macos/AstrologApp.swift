@@ -105,7 +105,7 @@ enum AstrologRenderer {
     let svgURL = previewDirectory.appendingPathComponent("chart.svg")
     let size = request.canvas.dimensions
 
-    var graphicArguments = request.chartArguments + request.style.engineArguments
+    var graphicArguments = request.renderArguments + request.style.engineArguments
       + request.graphicEffectArguments
     graphicArguments += ["-Xx0", "-Xw", String(size.0), String(size.1)]
     if request.lightBackground { graphicArguments.append("-Xr") }
@@ -122,7 +122,7 @@ enum AstrologRenderer {
   static func generatePNG(_ calculation: CalculatedChart, at outputURL: URL) throws {
     let request = calculation.request
     let size = request.canvas.dimensions
-    var arguments = request.chartArguments + request.style.engineArguments
+    var arguments = request.renderArguments + request.style.engineArguments
       + request.graphicEffectArguments
     arguments += ["-Xx0", "-Xw", String(size.0), String(size.1)]
     if request.lightBackground { arguments.append("-Xr") }

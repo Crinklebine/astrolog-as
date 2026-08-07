@@ -52,36 +52,36 @@ enum AstrologChartResultTests {
       near(strongest.power, 16.18, tolerance: 0.001, "strongest aspect power changed")
     }
 
-    test("Douglas winter fixed reference ChartResult") {
+    test("Seattle winter fixed reference ChartResult") {
       let place = AstrologPlace(
-        name: "Douglas", regionCode: "IM", timeZoneIdentifier: "Europe/Isle_of_Man",
-        longitudeDegreesWest: 4.4833, latitudeDegreesNorth: 54.15)
+        name: "Seattle", regionCode: "wa", timeZoneIdentifier: "America/Los_Angeles",
+        longitudeDegreesWest: 122.3321, latitudeDegreesNorth: 47.6062)
       let moment = try astrologMoment(
         for: parseISO("2026-01-05T21:57:00Z"),
         at: requireZone(place.timeZoneIdentifier))
       let result = try calculate(
         engineURL: engineURL, resourcesURL: resourcesURL,
-        moment: moment, place: place, chartName: "Douglas winter reference")
+        moment: moment, place: place, chartName: "Seattle winter reference")
 
       expect(result.bodies.count == 11, "expected 11 configured bodies")
       expect(result.houses.count == 12, "expected all 12 house cusps")
-      expect(result.aspects.count == 19, "expected 19 reference aspects")
-      expect(result.metadata.engineSubtitle.contains("9:57pm (ST Zone 0W)"), "winter metadata changed")
+      expect(result.aspects.count == 15, "expected 15 reference aspects")
+      expect(result.metadata.engineSubtitle.contains("1:57pm (ST Zone 8W)"), "winter metadata changed")
 
       let sun = try requireBody("Sun", result)
       expect(sun.position.sign == .capricorn && sun.position.degrees == 15, "Sun position changed")
       near(sun.position.minutes, 34.548863584, tolerance: 0.000_000_001, "Sun longitude changed")
-      expect(sun.house == 4, "Sun house changed")
+      expect(sun.house == 8, "Sun house changed")
 
       let jupiter = try requireBody("Jupi", result)
       expect(jupiter.isRetrograde, "Jupiter should be retrograde")
-      expect(jupiter.house == 11, "Jupiter house changed")
+      expect(jupiter.house == 3, "Jupiter house changed")
 
       let ascendant = try requireHouse(1, result)
-      expect(ascendant.position.sign == .virgo && ascendant.position.degrees == 16, "Ascendant changed")
-      near(ascendant.position.minutes, 34.526860558, tolerance: 0.000_000_001, "Ascendant precision changed")
+      expect(ascendant.position.sign == .gemini && ascendant.position.degrees == 10, "Ascendant changed")
+      near(ascendant.position.minutes, 17.921377407, tolerance: 0.000_000_001, "Ascendant precision changed")
       let midheaven = try requireHouse(10, result)
-      expect(midheaven.position.sign == .gemini && midheaven.position.degrees == 11, "Midheaven changed")
+      expect(midheaven.position.sign == .aquarius && midheaven.position.degrees == 9, "Midheaven changed")
 
       guard let strongest = result.aspects.first else { throw TestError("missing aspects") }
       expect(strongest.firstBody == "Sun" && strongest.secondBody == "Venus", "strongest aspect bodies changed")
@@ -91,13 +91,13 @@ enum AstrologChartResultTests {
 
     test("Background rerender preserves the calculated moment") {
       let place = AstrologPlace(
-        name: "Douglas", regionCode: "IM", timeZoneIdentifier: "Europe/Isle_of_Man",
-        longitudeDegreesWest: 4.4833, latitudeDegreesNorth: 54.15)
+        name: "Seattle", regionCode: "wa", timeZoneIdentifier: "America/Los_Angeles",
+        longitudeDegreesWest: 122.3321, latitudeDegreesNorth: 47.6062)
       let moment = try astrologMoment(
         for: parseISO("2026-01-05T21:57:00Z"),
         at: requireZone(place.timeZoneIdentifier))
       let original = ChartRequest(
-        requestedLocation: "Douglas, Isle of Man",
+        requestedLocation: "Seattle, WA, USA",
         sourceMode: .currentMoment,
         moment: moment,
         place: place,
@@ -138,6 +138,29 @@ enum AstrologChartResultTests {
              "wheel-only color settings leaked into another chart style")
     }
 
+    test("Graphic sidebar uses a bounded place label") {
+      let place = AstrologPlace(
+        name: "New York City", regionCode: "ny", timeZoneIdentifier: "America/New_York",
+        longitudeDegreesWest: 74.006, latitudeDegreesNorth: 40.7143)
+      let moment = try astrologMoment(
+        for: parseISO("2026-08-05T21:57:00Z"),
+        at: requireZone(place.timeZoneIdentifier))
+      let request = ChartRequest(
+        requestedLocation: "New York, NY, USA", sourceMode: .manual,
+        moment: moment, place: place, style: .wheel, canvas: .compact,
+        lightBackground: false)
+
+      expect(place.displayName == "New York City, NY, United States",
+             "canonical place name changed")
+      expect(place.graphicDisplayName == "New York City, NY, USA",
+             "US graphic label was not compacted")
+      expect(place.graphicDisplayName.count <= 25, "graphic place label can overflow the sidebar")
+      expect(request.chartArguments.contains(place.displayName),
+             "calculation no longer receives the canonical place")
+      expect(request.renderArguments.contains(place.graphicDisplayName),
+             "renderer did not receive the compact place label")
+    }
+
     test("Last successful place persists with a Seattle fallback") {
       let suiteName = "AstrologChartResultTests.\(UUID().uuidString)"
       let legacySuiteName = "AstrologChartResultTests.Legacy.\(UUID().uuidString)"
@@ -167,8 +190,8 @@ enum AstrologChartResultTests {
 
     test("Malformed engine positions cannot create a partial ChartResult") {
       let place = AstrologPlace(
-        name: "Douglas", regionCode: "IM", timeZoneIdentifier: "Europe/Isle_of_Man",
-        longitudeDegreesWest: 4.4833, latitudeDegreesNorth: 54.15)
+        name: "Seattle", regionCode: "wa", timeZoneIdentifier: "America/Los_Angeles",
+        longitudeDegreesWest: 122.3321, latitudeDegreesNorth: 47.6062)
       let moment = try astrologMoment(
         for: parseISO("2026-01-05T21:57:00Z"),
         at: requireZone(place.timeZoneIdentifier))

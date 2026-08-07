@@ -163,6 +163,23 @@ struct AstrologPlace: Equatable {
     return "\(name), \(country)"
   }
 
+  var graphicDisplayName: String {
+    let maximumLength = 25
+    var candidates = [displayName]
+    if regionCode == regionCode.lowercased() {
+      let country = countryCode == "US" ? "USA" : "Canada"
+      candidates.insert("\(name), \(regionCode.uppercased()), \(country)", at: 0)
+    }
+    candidates.append("\(name), \(countryCode)")
+    if let fitting = candidates.first(where: { $0.count <= maximumLength }) {
+      return fitting
+    }
+
+    let suffix = "..., \(countryCode)"
+    let available = max(1, maximumLength - suffix.count)
+    return String(name.prefix(available)) + suffix
+  }
+
   var astrologLongitude: String {
     formatAstrologCoordinate(longitudeDegreesWest, positiveSuffix: "W", negativeSuffix: "E", precision: 4)
   }
@@ -280,7 +297,12 @@ enum AtlasResolver {
   }
 }
 
-func astrologInputArguments(moment: AstrologMoment, place: AstrologPlace, chartName: String) -> [String] {
+func astrologInputArguments(
+  moment: AstrologMoment,
+  place: AstrologPlace,
+  chartName: String,
+  placeName: String? = nil
+) -> [String] {
   let components = moment.localDateComponents
   return [
     "-qb",
@@ -292,7 +314,7 @@ func astrologInputArguments(moment: AstrologMoment, place: AstrologPlace, chartN
     moment.astrologZone,
     place.astrologLongitude,
     place.astrologLatitude,
-    "-zi", chartName, place.displayName,
+    "-zi", chartName, placeName ?? place.displayName,
   ]
 }
 

@@ -90,6 +90,14 @@ struct ChartRequest {
       chartName: sourceMode == .currentMoment ? "Current moment" : "Custom chart")
   }
 
+  var renderArguments: [String] {
+    astrologInputArguments(
+      moment: moment,
+      place: place,
+      chartName: sourceMode == .currentMoment ? "Current moment" : "Custom chart",
+      placeName: place.graphicDisplayName)
+  }
+
   var graphicEffectArguments: [String] {
     guard style == .wheel else { return [] }
     return ["-Xv", "1", "-YXk", "-YXk0"]

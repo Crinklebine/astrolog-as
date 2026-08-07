@@ -1,32 +1,78 @@
 # Astrolog-AS
 
-Astrolog-AS is a native Apple Silicon macOS interface by Crinklebine around
-Walter D. Pullen's Astrolog 8.00 calculation and graphics engine. This source
-tree also supports a native command-line build with SVG, PNG, PostScript, and
-bitmap exports enabled while disabling the optional X11 window layer.
+Astrolog-AS is an unofficial native Apple Silicon macOS interface by
+Crinklebine for Walter D. Pullen's Astrolog 8.00 calculation and graphics
+engine. It provides a focused Mac experience while retaining Astrolog as the
+engine that calculates and renders each chart.
 
-## Requirements
+## Download and install
 
-- macOS
-- Apple Command Line Tools (`xcode-select --install`)
+Download the current Apple Silicon DMG from the
+[latest release](https://github.com/Crinklebine/astrolog-as/releases/latest).
 
-## Build
+Astrolog-AS requires an Apple Silicon Mac running macOS 14 Sonoma or later.
+
+1. Open the downloaded DMG.
+2. Drag `Astrolog-AS.app` to the Applications folder.
+3. On first launch, right-click Astrolog-AS and choose **Open**.
+
+The release is ad-hoc signed but is not signed with an Apple Developer ID or
+notarized by Apple. macOS may therefore ask you to confirm that you want to
+open it.
+
+## Features
+
+- Native macOS controls for place, date, time, chart style, and appearance.
+- Wheel, Aspect Grid, World Map, and Solar System graphics.
+- A structured Positions view generated from the same complete chart result as
+  the graphic view.
+- Automatic time-zone and daylight-saving handling for place searches.
+- Seattle as the initial location, with the last successful place remembered.
+- Scalable SVG charts with PNG and text-report export.
+- Right-click chart copying and a dark chart background by default.
+- A self-contained app that does not require XQuartz.
+
+## Project layout
+
+Walter D. Pullen's Astrolog engine source remains at the repository root. The
+native SwiftUI application and its typed chart integration are under `macos/`.
+The packaged application embeds the command-line engine and the runtime data it
+needs.
+
+Astrolog-AS is an independent, unofficial interface and is not an official
+Astrolog release. Learn more about the original project at
+[astrolog.org](https://www.astrolog.org/astrolog.htm).
+
+## Build the native macOS app
+
+Building the app requires an Apple Silicon Mac, macOS 14 or later, and Xcode
+with the macOS SDK installed.
+
+```sh
+./scripts/build_macos_app.sh
+```
+
+The result is `dist/Astrolog-AS.app`.
+
+## Build the command-line engine
+
+The source tree also supports a native command-line build with SVG, PNG,
+PostScript, and bitmap exports enabled while disabling the optional X11 window
+layer. Apple Command Line Tools are sufficient for this build.
 
 ```sh
 make -j8
 ```
 
-The result is the `astrolog` executable in this directory. Rebuild from scratch
-with:
+The result is the `astrolog` executable in the repository root. Rebuild from
+scratch with:
 
 ```sh
 make clean
 make -j8
 ```
 
-## Run
-
-Run Astrolog from this directory so it can find `astrolog.as`, `atlas.as`,
+Run Astrolog from the repository root so it can find `astrolog.as`, `atlas.as`,
 `timezone.as`, `sefstars.txt`, and the `ephem` directory:
 
 ```sh
@@ -34,10 +80,7 @@ Run Astrolog from this directory so it can find `astrolog.as`, `atlas.as`,
 ./astrolog -n -v
 ```
 
-The source distribution defaults to Seattle. Edit `astrolog.as`, or pass chart
-location and time-zone switches, before relying on "current moment" charts.
-
-For example, look up a city using the bundled atlas and timezone data:
+For example, look up Seattle using the bundled atlas and time-zone data:
 
 ```sh
 ./astrolog -n -zN "Seattle, WA, USA" -v
@@ -50,40 +93,41 @@ Generate chart graphics without X11:
 ./astrolog -n -zN "Seattle, WA, USA" -Xbp -Xo chart.png
 ```
 
-## Optional interactive windows
+### Optional interactive engine windows
 
-Interactive chart windows require XQuartz and an X11-enabled rebuild. Install
-XQuartz separately, uncomment `#define X11` in `astrolog.h`, and add the XQuartz
-include, library, and runtime settings to the Makefile.
+The native Astrolog-AS app does not need XQuartz. Interactive windows from the
+engine itself require XQuartz and an X11-enabled rebuild. Install XQuartz,
+uncomment `#define X11` in `astrolog.h`, and add the XQuartz include, library,
+and runtime settings to the Makefile.
 
-## Native macOS app
+## Tests
 
-Build the self-contained Apple Silicon app with:
-
-```sh
-./scripts/build_macos_app.sh
-```
-
-The result is `dist/Astrolog-AS.app`. It embeds the calculation engine and runtime
-data, provides native controls and chart preview, and does not require XQuartz.
-
-Run the fixed-instant timezone and daylight-saving tests with:
+Run the fixed-instant time-zone and daylight-saving tests with:
 
 ```sh
 ./scripts/test_macos_time.sh
 ```
 
-Run the typed chart-result regressions against fixed New York and Douglas
+Run the typed chart-result regressions against fixed New York and Seattle
 reference charts with:
 
 ```sh
 ./scripts/test_macos_chart_result.sh
 ```
 
-## On-demand DMG
+## On-demand DMG builds
 
-The `Build Astrolog-AS DMG` GitHub Actions workflow can be started manually
-from the repository's Actions tab. It builds and tests the native Apple Silicon
-app, packages a versioned DMG, and uploads it as the `Astrolog-AS-arm64`
-workflow artifact for 30 days. The artifact is ad-hoc signed for personal or
-internal use; Developer ID signing and Apple notarization are not configured.
+The `Build Astrolog-AS DMG` workflow can be started manually from the
+repository's Actions tab. It builds and tests the native Apple Silicon app,
+packages a versioned DMG, and uploads it as the `Astrolog-AS-arm64` workflow
+artifact for 30 days.
+
+That 30-day limit applies only to the temporary Actions artifact. DMGs attached
+to a GitHub release remain available with that release. Developer ID signing
+and Apple notarization are not currently configured.
+
+## License and attribution
+
+Astrolog is copyright Walter D. Pullen and is distributed under the GNU General
+Public License version 2. See [`license.htm`](license.htm) for the included
+license text. Astrolog-AS interface contributions are by Crinklebine.
