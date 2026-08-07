@@ -1,5 +1,29 @@
 import Foundation
 
+struct LastPlaceStore {
+  static let defaultLocation = "Seattle, WA, USA"
+  private static let locationKey = "lastSuccessfulChartLocation"
+
+  private let defaults: UserDefaults
+
+  init(defaults: UserDefaults = .standard) {
+    self.defaults = defaults
+  }
+
+  var location: String {
+    let saved = defaults.string(forKey: Self.locationKey)?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let saved, !saved.isEmpty else { return Self.defaultLocation }
+    return saved
+  }
+
+  func save(_ location: String) {
+    let value = location.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !value.isEmpty else { return }
+    defaults.set(value, forKey: Self.locationKey)
+  }
+}
+
 enum ChartStyle: String, CaseIterable, Identifiable {
   case wheel = "Birth Wheel"
   case aspects = "Aspect Grid"
@@ -84,7 +108,6 @@ struct CalculatedChart {
 struct RenderedChart {
   let calculation: CalculatedChart
   let svgURL: URL
-  let previewURL: URL
 
   var request: ChartRequest { calculation.request }
   var result: ChartResult { calculation.result }

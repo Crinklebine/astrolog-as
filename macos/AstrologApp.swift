@@ -103,7 +103,6 @@ enum AstrologRenderer {
       .appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: previewDirectory, withIntermediateDirectories: true)
     let svgURL = previewDirectory.appendingPathComponent("chart.svg")
-    let previewURL = previewDirectory.appendingPathComponent("chart.png")
     let size = request.canvas.dimensions
 
     var graphicArguments = request.chartArguments + request.style.engineArguments
@@ -113,19 +112,11 @@ enum AstrologRenderer {
     graphicArguments += ["-XV", "-Xo", svgURL.path]
     _ = try AstrologEngine.run(arguments: graphicArguments)
 
-    var previewArguments = request.chartArguments + request.style.engineArguments
-      + request.graphicEffectArguments
-    previewArguments += ["-Xx0", "-Xw", String(size.0), String(size.1)]
-    if request.lightBackground { previewArguments.append("-Xr") }
-    previewArguments += ["-Xbp", "-Xo", previewURL.path]
-    _ = try AstrologEngine.run(arguments: previewArguments)
-
-    guard FileManager.default.fileExists(atPath: svgURL.path),
-          FileManager.default.fileExists(atPath: previewURL.path) else {
+    guard FileManager.default.fileExists(atPath: svgURL.path) else {
       throw AstrologAppError.missingOutput
     }
 
-    return RenderedChart(calculation: calculation, svgURL: svgURL, previewURL: previewURL)
+    return RenderedChart(calculation: calculation, svgURL: svgURL)
   }
 
   static func generatePNG(_ calculation: CalculatedChart, at outputURL: URL) throws {
@@ -145,7 +136,7 @@ enum AstrologRenderer {
 
 @MainActor
 final class ChartViewModel: ObservableObject {
-  @Published var location = "Seattle, WA, USA"
+  @Published var location: String
   @Published var useCurrentMoment = true
   @Published var chartDate = Date()
   @Published var displayTimeZone = TimeZone(identifier: "America/Los_Angeles") ?? .current
@@ -159,6 +150,8 @@ final class ChartViewModel: ObservableObject {
   @Published var statusText = "Ready"
   @Published var errorMessage: String?
 
+  private let lastPlaceStore: LastPlaceStore
+
   var isBusy: Bool { isWorking || isUpdatingAppearance }
 
   let suggestedPlaces = [
@@ -169,6 +162,11 @@ final class ChartViewModel: ObservableObject {
     "Sydney, Australia",
     "Tokyo, Japan",
   ]
+
+  init(lastPlaceStore: LastPlaceStore = LastPlaceStore()) {
+    self.lastPlaceStore = lastPlaceStore
+    location = lastPlaceStore.location
+  }
 
   func request(for currentInstant: Date) throws -> ChartRequest {
     let requestedLocation = location.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -222,6 +220,7 @@ final class ChartViewModel: ObservableObject {
         return try AstrologRenderer.render(calculation)
       }.value
       generatedChart = chart
+      lastPlaceStore.save(request.requestedLocation)
       displayTimeZone = request.place.timeZone ?? displayTimeZone
       chartDate = request.moment.instant
       statusText = "Updated just now"
@@ -417,7 +416,7 @@ final class ChartWebView: WKWebView {
   }
 }
 
-struct ChartPreview: NSViewRepresentable {
+struct SVGPreview: NSViewRepresentable {
   let fileURL: URL
 
   func makeNSView(context: Context) -> ChartWebView {
@@ -440,7 +439,7 @@ struct ChartImageView: View {
   let chart: RenderedChart
 
   var body: some View {
-    ChartPreview(fileURL: chart.previewURL)
+    SVGPreview(fileURL: chart.svgURL)
       .background(Color(nsColor: .windowBackgroundColor))
       .accessibilityLabel(
         "\(chart.request.style.rawValue) for \(chart.result.metadata.place.displayName), " +

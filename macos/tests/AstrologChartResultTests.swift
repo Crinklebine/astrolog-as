@@ -138,6 +138,22 @@ enum AstrologChartResultTests {
              "wheel-only color settings leaked into another chart style")
     }
 
+    test("Last successful place persists with a Seattle fallback") {
+      let suiteName = "AstrologChartResultTests.\(UUID().uuidString)"
+      guard let defaults = UserDefaults(suiteName: suiteName) else {
+        throw TestError("could not create isolated defaults")
+      }
+      defer { defaults.removePersistentDomain(forName: suiteName) }
+      let store = LastPlaceStore(defaults: defaults)
+
+      expect(store.location == "Seattle, WA, USA", "first launch did not default to Seattle")
+      store.save("  New York, NY, USA  ")
+      expect(LastPlaceStore(defaults: defaults).location == "New York, NY, USA",
+             "last successful place was not restored")
+      store.save("   ")
+      expect(store.location == "New York, NY, USA", "an empty place replaced the saved value")
+    }
+
     test("Malformed engine positions cannot create a partial ChartResult") {
       let place = AstrologPlace(
         name: "Douglas", regionCode: "IM", timeZoneIdentifier: "Europe/Isle_of_Man",
