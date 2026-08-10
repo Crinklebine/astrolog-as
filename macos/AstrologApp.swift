@@ -140,6 +140,22 @@ enum AstrologRenderer {
   }
 }
 
+enum ResultView: Int, CaseIterable, Identifiable {
+  case chart
+  case positions
+  case aspects
+
+  var id: Int { rawValue }
+
+  var title: String {
+    switch self {
+    case .chart: return "Chart"
+    case .positions: return "Positions"
+    case .aspects: return "Aspects"
+    }
+  }
+}
+
 @MainActor
 final class ChartViewModel: ObservableObject {
   @Published var location: String
@@ -149,7 +165,7 @@ final class ChartViewModel: ObservableObject {
   @Published var chartStyle = ChartStyle.wheel
   @Published var canvasSize = CanvasSize.compact
   @Published var lightBackground = false
-  @Published var selectedResult = 0
+  @Published var selectedResult = ResultView.chart
   @Published var generatedChart: RenderedChart?
   @Published var isWorking = false
   @Published private(set) var isUpdatingAppearance = false
@@ -540,6 +556,90 @@ struct PositionsResultView: View {
   }
 }
 
+struct AspectsResultView: View {
+  let result: ChartResult
+  @State private var sortOrder = [KeyPathComparator(\ChartAspect.rank)]
+
+  private var sortedAspects: [ChartAspect] {
+    result.aspects.sorted(using: sortOrder)
+  }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HStack(spacing: 16) {
+        Label(result.metadata.place.displayName, systemImage: "mappin.and.ellipse")
+        Label("\(result.aspects.count) major aspects", systemImage: "arrow.triangle.branch")
+        Spacer()
+        Text("Ranked by power")
+      }
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      .padding(.horizontal, 18)
+      .padding(.vertical, 10)
+
+      Divider()
+
+      if result.aspects.isEmpty {
+        ContentUnavailableView(
+          "No Major Aspects", systemImage: "arrow.triangle.branch",
+          description: Text("Astrolog did not report any major aspects for this chart."))
+      } else {
+        Table(sortedAspects, sortOrder: $sortOrder) {
+          TableColumn("Rank", value: \.rank) { aspect in
+            Text(aspect.rank, format: .number)
+              .monospacedDigit()
+          }
+          .width(55)
+
+          TableColumn("First body", value: \.firstBody)
+            .width(min: 90, ideal: 120)
+
+          TableColumn("Aspect", value: \.kind.name) { aspect in
+            HStack(spacing: 7) {
+              Circle()
+                .fill(color(for: aspect.kind))
+                .frame(width: 8, height: 8)
+              Text(aspect.kind.name)
+            }
+          }
+          .width(min: 100, ideal: 125)
+
+          TableColumn("Second body", value: \.secondBody)
+            .width(min: 90, ideal: 120)
+
+          TableColumn("Orb", value: \.orbMagnitude) { aspect in
+            Text(orbText(aspect.orbDegrees))
+              .monospacedDigit()
+          }
+          .width(min: 70, ideal: 85)
+
+          TableColumn("Power", value: \.power) { aspect in
+            Text(aspect.power, format: .number.precision(.fractionLength(2)))
+              .monospacedDigit()
+          }
+          .width(min: 65, ideal: 80)
+        }
+      }
+    }
+    .background(Color(nsColor: .textBackgroundColor))
+  }
+
+  private func orbText(_ orb: Double) -> String {
+    let totalMinutes = Int((abs(orb) * 60.0).rounded())
+    return "\(totalMinutes / 60)°\(String(format: "%02d", totalMinutes % 60))′"
+  }
+
+  private func color(for kind: AspectKind) -> Color {
+    switch kind {
+    case .conjunction: return .yellow
+    case .opposition: return .blue
+    case .square: return .red
+    case .trine: return .green
+    case .sextile: return .cyan
+    }
+  }
+}
+
 struct SidebarView: View {
   @ObservedObject var model: ChartViewModel
 
@@ -637,11 +737,20 @@ struct SidebarView: View {
 struct ChartDetailView: View {
   @ObservedObject var model: ChartViewModel
 
+  private var title: String {
+    guard let chart = model.generatedChart else { return "Astrolog-AS" }
+    switch model.selectedResult {
+    case .chart: return chart.request.style.rawValue
+    case .positions: return "Positions"
+    case .aspects: return "Aspects"
+    }
+  }
+
   var body: some View {
     VStack(spacing: 0) {
       HStack(alignment: .center) {
         VStack(alignment: .leading, spacing: 3) {
-          Text(model.generatedChart?.request.style.rawValue ?? "Astrolog-AS")
+          Text(title)
             .font(.title2.weight(.semibold))
           Text(model.generatedChart?.result.metadata.heading ?? "Create a chart to begin")
             .font(.caption)
@@ -650,11 +759,12 @@ struct ChartDetailView: View {
         }
         Spacer()
         Picker("Result", selection: $model.selectedResult) {
-          Text("Chart").tag(0)
-          Text("Positions").tag(1)
+          ForEach(ResultView.allCases) { resultView in
+            Text(resultView.title).tag(resultView)
+          }
         }
         .pickerStyle(.segmented)
-        .frame(width: 210)
+        .frame(width: 300)
       }
       .padding(.horizontal, 20)
       .padding(.vertical, 14)
@@ -663,10 +773,13 @@ struct ChartDetailView: View {
 
       Group {
         if let chart = model.generatedChart {
-          if model.selectedResult == 0 {
+          switch model.selectedResult {
+          case .chart:
             ChartImageView(chart: chart)
-          } else {
+          case .positions:
             PositionsResultView(result: chart.result)
+          case .aspects:
+            AspectsResultView(result: chart.result)
           }
         } else if model.isWorking {
           ProgressView("Calculating your chart…")

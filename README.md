@@ -8,9 +8,9 @@ engine that calculates and renders each chart.
 ## Download and install
 
 The current release is
-[Astrolog-AS 8.00 (build 800.18)](https://github.com/Crinklebine/astrolog-as/releases/tag/v8.00-as.18).
+[Astrolog-AS 8.00 (build 800.19)](https://github.com/Crinklebine/astrolog-as/releases/tag/v8.00-as.19).
 Download the
-[Apple Silicon DMG](https://github.com/Crinklebine/astrolog-as/releases/download/v8.00-as.18/Astrolog-AS-800.18-arm64.dmg).
+[Apple Silicon DMG](https://github.com/Crinklebine/astrolog-as/releases/download/v8.00-as.19/Astrolog-AS-800.19-arm64.dmg).
 
 Astrolog-AS requires an Apple Silicon Mac running macOS 14 Sonoma or later.
 
@@ -28,6 +28,7 @@ open it.
 - Wheel, Aspect Grid, World Map, and Solar System graphics.
 - A structured Positions view generated from the same complete chart result as
   the graphic view.
+- A sortable Aspects view with rank, bodies, aspect type, orb, and power.
 - Automatic time-zone and daylight-saving handling for place searches.
 - Seattle as the initial location, with the last successful place remembered.
 - Scalable SVG charts with PNG and text-report export.

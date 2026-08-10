@@ -115,6 +115,7 @@ struct ChartAspect: Identifiable {
   let orbDegrees: Double
   let power: Double
   var id: Int { rank }
+  var orbMagnitude: Double { abs(orbDegrees) }
 }
 
 struct ChartMetadata {
