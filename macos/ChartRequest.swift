@@ -103,7 +103,11 @@ struct ChartRequest {
     return ["-Xv", "1", "-YXk", "-YXk0"]
   }
 
-  func withLightBackground(_ lightBackground: Bool) -> ChartRequest {
+  func withRenderingOptions(
+    style: ChartStyle,
+    canvas: CanvasSize,
+    lightBackground: Bool
+  ) -> ChartRequest {
     ChartRequest(
       requestedLocation: requestedLocation,
       sourceMode: sourceMode,

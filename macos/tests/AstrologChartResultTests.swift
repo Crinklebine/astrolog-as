@@ -125,7 +125,7 @@ enum AstrologChartResultTests {
       near(strongest.power, 19.54, tolerance: 0.001, "strongest aspect power changed")
     }
 
-    test("Background rerender preserves the calculated moment") {
+    test("Rendering option changes preserve the calculated chart") {
       let place = AstrologPlace(
         name: "Seattle", regionCode: "wa", timeZoneIdentifier: "America/Los_Angeles",
         longitudeDegreesWest: 122.3321, latitudeDegreesNorth: 47.6062)
@@ -140,7 +140,10 @@ enum AstrologChartResultTests {
         style: .wheel,
         canvas: .compact,
         lightBackground: false)
-      let updated = original.withLightBackground(true)
+      let updated = original.withRenderingOptions(
+        style: .aspects,
+        canvas: .large,
+        lightBackground: true)
 
       expect(updated.lightBackground, "background choice did not change")
       expect(updated.moment.instant == original.moment.instant, "rerender changed the chart instant")
@@ -148,8 +151,8 @@ enum AstrologChartResultTests {
              "rerender changed the chart civil time")
       expect(updated.requestedLocation == original.requestedLocation, "rerender changed the place query")
       expect(updated.sourceMode == original.sourceMode, "rerender changed the source mode")
-      expect(updated.style == original.style, "rerender changed the chart style")
-      expect(updated.canvas == original.canvas, "rerender changed the detail level")
+      expect(updated.style == .aspects, "chart style did not change")
+      expect(updated.canvas == .large, "detail level did not change")
     }
 
     test("Wheel rendering uses the FLTK elemental palette") {

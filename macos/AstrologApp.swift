@@ -234,24 +234,32 @@ final class ChartViewModel: ObservableObject {
     isWorking = false
   }
 
-  func updateChartBackground() async {
-    guard let chart = generatedChart, !isBusy,
-          chart.request.lightBackground != lightBackground else { return }
+  func updateChartRendering() async {
+    guard let chart = generatedChart, !isBusy else { return }
+
+    let request = chart.request.withRenderingOptions(
+      style: chartStyle,
+      canvas: canvasSize,
+      lightBackground: lightBackground)
+    guard request.style != chart.request.style ||
+          request.canvas != chart.request.canvas ||
+          request.lightBackground != chart.request.lightBackground else { return }
 
     isUpdatingAppearance = true
     errorMessage = nil
-    statusText = "Updating background…"
-    let request = chart.request.withLightBackground(lightBackground)
+    statusText = "Updating chart…"
     let calculation = CalculatedChart(request: request, result: chart.result)
     do {
       generatedChart = try await Task.detached(priority: .userInitiated) {
         try AstrologRenderer.render(calculation)
       }.value
-      statusText = "Background updated"
+      statusText = "Chart updated"
     } catch {
+      chartStyle = chart.request.style
+      canvasSize = chart.request.canvas
       lightBackground = chart.request.lightBackground
       errorMessage = error.localizedDescription
-      statusText = "Couldn’t update background"
+      statusText = "Couldn’t update chart"
     }
     isUpdatingAppearance = false
   }
@@ -564,15 +572,23 @@ struct SidebarView: View {
             Label(style.rawValue, systemImage: style.symbol).tag(style)
           }
         }
+        .disabled(model.isBusy)
+        .onChange(of: model.chartStyle) {
+          Task { await model.updateChartRendering() }
+        }
         Picker("Detail", selection: $model.canvasSize) {
           ForEach(CanvasSize.allCases) { size in
             Text(size.rawValue).tag(size)
           }
         }
+        .disabled(model.isBusy)
+        .onChange(of: model.canvasSize) {
+          Task { await model.updateChartRendering() }
+        }
         Toggle("Light background", isOn: $model.lightBackground)
           .disabled(model.isBusy)
           .onChange(of: model.lightBackground) {
-            Task { await model.updateChartBackground() }
+            Task { await model.updateChartRendering() }
           }
       }
 
