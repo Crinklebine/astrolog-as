@@ -7,8 +7,10 @@ engine that calculates and renders each chart.
 
 ## Download and install
 
-Download the current Apple Silicon DMG from the
-[latest release](https://github.com/Crinklebine/astrolog-as/releases/latest).
+The current release is
+[Astrolog-AS 8.00 (build 800.17)](https://github.com/Crinklebine/astrolog-as/releases/tag/v8.00-as.17).
+Download the
+[Apple Silicon DMG](https://github.com/Crinklebine/astrolog-as/releases/download/v8.00-as.17/Astrolog-AS-800.17-arm64.dmg).
 
 Astrolog-AS requires an Apple Silicon Mac running macOS 14 Sonoma or later.
 
@@ -30,6 +32,8 @@ open it.
 - Seattle as the initial location, with the last successful place remembered.
 - Scalable SVG charts with PNG and text-report export.
 - Hover tooltips for planets, angles, zodiac signs, and houses in the Wheel.
+- Automatic chart rerendering when the style, detail, or background changes,
+  without changing the displayed chart's moment.
 - Right-click chart copying and a dark chart background by default.
 - A self-contained app that does not require XQuartz.
 
@@ -126,6 +130,11 @@ artifact for 30 days.
 That 30-day limit applies only to the temporary Actions artifact. DMGs attached
 to a GitHub release remain available with that release. Developer ID signing
 and Apple notarization are not currently configured.
+
+For every release, increment `CFBundleVersion` in `macos/Info.plist` and update
+the current release and DMG links in this README before running the workflow.
+After the workflow succeeds, attach its DMG artifact to a matching versioned
+GitHub release.
 
 ## License and attribution
 
