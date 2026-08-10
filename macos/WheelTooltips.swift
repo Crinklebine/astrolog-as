@@ -309,7 +309,7 @@ enum WheelTooltipAnnotator {
       return "\(otherName) · \(aspect.kind.name) · orb \(orbText(aspect.orbDegrees))"
     }
     let visibleLimit = 5
-    guard labels.count > visibleLimit else { return labels }
+    guard labels.count > visibleLimit + 1 else { return labels }
     return Array(labels.prefix(visibleLimit)) + ["… \(labels.count - visibleLimit) more relationships"]
   }
 

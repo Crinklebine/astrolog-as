@@ -73,6 +73,9 @@ enum AstrologChartResultTests {
              "Sun tooltip lost its Moon relationship")
       expect(targets.filter { $0.kind == "body" }.allSatisfy { $0.relationships.count <= 6 },
              "a relationship tooltip can grow beyond its compact limit")
+      expect(targets.allSatisfy { target in
+        !target.relationships.contains(where: { $0.contains("… 1 more relationship") })
+      }, "a single remaining relationship was unnecessarily collapsed")
       expect(targets.contains(where: {
         $0.kind == "body" && $0.relationships.last?.contains("more relationships") == true
       }), "crowded relationship tooltips lost their summary")
