@@ -69,6 +69,13 @@ enum AstrologChartResultTests {
       }
       expect(sun.label.contains("Sun · 13°30′ Leo · House 7 · Direct"),
              "Sun tooltip lost its structured chart details")
+      expect(sun.relationships.contains(where: { $0.contains("Moon · Square · orb 2°22′") }),
+             "Sun tooltip lost its Moon relationship")
+      expect(targets.filter { $0.kind == "body" }.allSatisfy { $0.relationships.count <= 6 },
+             "a relationship tooltip can grow beyond its compact limit")
+      expect(targets.contains(where: {
+        $0.kind == "body" && $0.relationships.last?.contains("more relationships") == true
+      }), "crowded relationship tooltips lost their summary")
       expect(sun.x > 0 && sun.x < 4480 && sun.y > 0 && sun.y < 4480,
              "Sun tooltip target is outside the wheel")
 
@@ -79,6 +86,12 @@ enum AstrologChartResultTests {
       """
       let annotated = try WheelTooltipAnnotator.annotatedSVG(source, result: result)
       expect(annotated.contains("id=\"astrolog-as-tooltips\""), "tooltip layer was not added")
+      expect(annotated.contains("id=\"astrolog-as-aspect-focus\""),
+             "aspect focus layer was not added")
+      expect(annotated.contains("data-first-key=\"Sun\" data-second-key=\"Moon\""),
+             "Sun-Moon aspect was not made interactive")
+      expect(annotated.contains("data-tooltip-relationships=\"Moon · Square · orb 2°22′"),
+             "body relationship details were not embedded in the SVG")
       expect(annotated.components(separatedBy: "class=\"astrolog-as-tooltip-target\"").count - 1 == 37,
              "SVG tooltip target count changed")
       expect(annotated.contains("<title>Sun · 13°30′ Leo · House 7 · Direct</title>"),
@@ -86,6 +99,10 @@ enum AstrologChartResultTests {
       let annotatedAgain = try WheelTooltipAnnotator.annotatedSVG(annotated, result: result)
       expect(annotatedAgain == annotated,
              "tooltip annotation is not idempotent")
+      let lightAnnotated = try WheelTooltipAnnotator.annotatedSVG(
+        source, result: result, lightBackground: true)
+      expect(lightAnnotated.contains("fill=\"white\""),
+             "light charts received a dark relationship mask")
     }
 
     test("Seattle winter fixed reference ChartResult") {

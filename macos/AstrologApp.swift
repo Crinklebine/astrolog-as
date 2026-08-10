@@ -116,7 +116,10 @@ enum AstrologRenderer {
       throw AstrologAppError.missingOutput
     }
     if request.style == .wheel {
-      try WheelTooltipAnnotator.annotate(svgAt: svgURL, result: calculation.result)
+      try WheelTooltipAnnotator.annotate(
+        svgAt: svgURL,
+        result: calculation.result,
+        lightBackground: request.lightBackground)
     }
 
     return RenderedChart(calculation: calculation, svgURL: svgURL)
