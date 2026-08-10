@@ -29,6 +29,7 @@ open it.
 - Automatic time-zone and daylight-saving handling for place searches.
 - Seattle as the initial location, with the last successful place remembered.
 - Scalable SVG charts with PNG and text-report export.
+- Hover tooltips for planets, angles, zodiac signs, and houses in the Wheel.
 - Right-click chart copying and a dark chart background by default.
 - A self-contained app that does not require XQuartz.
 

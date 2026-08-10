@@ -51,6 +51,7 @@ xcrun swiftc \
   macos/AstrologTime.swift \
   macos/ChartResult.swift \
   macos/ChartRequest.swift \
+  macos/WheelTooltips.swift \
   macos/AstrologApp.swift \
   -o "$contents_path/MacOS/Astrolog-AS"
 

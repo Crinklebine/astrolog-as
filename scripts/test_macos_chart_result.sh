@@ -42,6 +42,7 @@ xcrun swiftc \
   macos/AstrologTime.swift \
   macos/ChartResult.swift \
   macos/ChartRequest.swift \
+  macos/WheelTooltips.swift \
   macos/tests/AstrologChartResultTests.swift \
   -o "$build_path/AstrologChartResultTests"
 

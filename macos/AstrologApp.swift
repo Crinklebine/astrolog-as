@@ -115,6 +115,9 @@ enum AstrologRenderer {
     guard FileManager.default.fileExists(atPath: svgURL.path) else {
       throw AstrologAppError.missingOutput
     }
+    if request.style == .wheel {
+      try WheelTooltipAnnotator.annotate(svgAt: svgURL, result: calculation.result)
+    }
 
     return RenderedChart(calculation: calculation, svgURL: svgURL)
   }

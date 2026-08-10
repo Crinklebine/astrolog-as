@@ -11,6 +11,7 @@ enum AstrologChartResultTests {
     }
     let engineURL = URL(fileURLWithPath: CommandLine.arguments[1])
     let resourcesURL = URL(fileURLWithPath: CommandLine.arguments[2], isDirectory: true)
+    var newYorkReference: ChartResult?
 
     test("New York fixed reference ChartResult") {
       let place = AstrologPlace(
@@ -22,6 +23,7 @@ enum AstrologChartResultTests {
       let result = try calculate(
         engineURL: engineURL, resourcesURL: resourcesURL,
         moment: moment, place: place, chartName: "Reference NY")
+      newYorkReference = result
 
       expect(result.metadata.engineVersion == "8.00", "wrong engine version")
       expect(result.metadata.chartName == "Reference NY", "wrong chart name")
@@ -50,6 +52,40 @@ enum AstrologChartResultTests {
       expect(strongest.kind == .square, "strongest aspect kind changed")
       near(strongest.orbDegrees, 2 + 22.0 / 60.0, tolerance: 0.000_001, "strongest aspect orb changed")
       near(strongest.power, 16.18, tolerance: 0.001, "strongest aspect power changed")
+    }
+
+    test("Wheel SVG contains semantic tooltip targets") {
+      guard let result = newYorkReference else { throw TestError("missing New York reference") }
+      let targets = WheelTooltipAnnotator.tooltipTargets(
+        for: result, viewBoxWidth: 5760, viewBoxHeight: 4480)
+      expect(targets.count == 37, "expected 37 primary wheel tooltip targets")
+      expect(targets.filter { $0.kind == "body" }.count == 11, "expected all body tooltips")
+      expect(targets.filter { $0.kind == "angle" }.count == 2, "expected Ascendant and Midheaven tooltips")
+      expect(targets.filter { $0.kind == "sign" }.count == 12, "expected all zodiac sign tooltips")
+      expect(targets.filter { $0.kind == "house" }.count == 12, "expected all house tooltips")
+
+      guard let sun = targets.first(where: { $0.kind == "body" && $0.key == "Sun" }) else {
+        throw TestError("missing Sun tooltip")
+      }
+      expect(sun.label.contains("Sun · 13°30′ Leo · House 7 · Direct"),
+             "Sun tooltip lost its structured chart details")
+      expect(sun.x > 0 && sun.x < 4480 && sun.y > 0 && sun.y < 4480,
+             "Sun tooltip target is outside the wheel")
+
+      let source = """
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5760 4480">
+      <g/>
+      </svg>
+      """
+      let annotated = try WheelTooltipAnnotator.annotatedSVG(source, result: result)
+      expect(annotated.contains("id=\"astrolog-as-tooltips\""), "tooltip layer was not added")
+      expect(annotated.components(separatedBy: "class=\"astrolog-as-tooltip-target\"").count - 1 == 37,
+             "SVG tooltip target count changed")
+      expect(annotated.contains("<title>Sun · 13°30′ Leo · House 7 · Direct</title>"),
+             "exported SVG is missing the Sun title")
+      let annotatedAgain = try WheelTooltipAnnotator.annotatedSVG(annotated, result: result)
+      expect(annotatedAgain == annotated,
+             "tooltip annotation is not idempotent")
     }
 
     test("Seattle winter fixed reference ChartResult") {
