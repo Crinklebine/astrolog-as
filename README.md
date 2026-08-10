@@ -140,6 +140,8 @@ GitHub release.
 
 ## License and attribution
 
-Astrolog is copyright Walter D. Pullen and is distributed under the GNU General
-Public License version 2. See [`license.htm`](license.htm) for the included
-license text. Astrolog-AS interface contributions are by Crinklebine.
+Astrolog is copyright Walter D. Pullen. Astrolog and the Astrolog-AS interface
+contributions by Crinklebine are distributed under the GNU General Public
+License version 2 or, at your option, any later version
+([`GPL-2.0-or-later`](license.htm)). Third-party materials remain under their
+respective licenses.
