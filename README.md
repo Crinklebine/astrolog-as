@@ -8,9 +8,9 @@ engine that calculates and renders each chart.
 ## Download and install
 
 The current release is
-[Astrolog-AS 8.00 (build 800.19)](https://github.com/Crinklebine/astrolog-as/releases/tag/v8.00-as.19).
+[Astrolog-AS 8.00 (build 800.21)](https://github.com/Crinklebine/astrolog-as/releases/tag/v8.00-as.21).
 Download the
-[Apple Silicon DMG](https://github.com/Crinklebine/astrolog-as/releases/download/v8.00-as.19/Astrolog-AS-800.19-arm64.dmg).
+[Apple Silicon DMG](https://github.com/Crinklebine/astrolog-as/releases/download/v8.00-as.21/Astrolog-AS-800.21-arm64.dmg).
 
 Astrolog-AS requires an Apple Silicon Mac running macOS 14 Sonoma or later.
 
