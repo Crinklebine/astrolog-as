@@ -89,6 +89,8 @@ enum AstrologChartResultTests {
       """
       let annotated = try WheelTooltipAnnotator.annotatedSVG(source, result: result)
       expect(annotated.contains("id=\"astrolog-as-tooltips\""), "tooltip layer was not added")
+      expect(annotated.contains("astrologTooltipsDisabled"),
+             "tooltip interaction cannot be suspended during animation")
       expect(annotated.contains("id=\"astrolog-as-aspect-focus\""),
              "aspect focus layer was not added")
       expect(annotated.contains("data-first-key=\"Sun\" data-second-key=\"Moon\""),
@@ -276,6 +278,64 @@ enum AstrologChartResultTests {
              "rerender changed the Solar System scale")
     }
 
+    test("Animation steps preserve civil time and chart settings") {
+      let place = AstrologPlace(
+        name: "New York City", regionCode: "ny", timeZoneIdentifier: "America/New_York",
+        longitudeDegreesWest: 74.006, latitudeDegreesNorth: 40.7143)
+      let timeZone = try requireZone(place.timeZoneIdentifier)
+      let start = try parseISO("2026-03-07T17:00:00Z")
+      let expectedNextDay = try parseISO("2026-03-08T16:00:00Z")
+      guard let nextDay = ChartAnimationStep.day.advancing(
+        start, direction: .forward, in: timeZone) else {
+        throw TestError("could not advance an animation day")
+      }
+      expect(nextDay == expectedNextDay,
+             "a daily step did not preserve local noon across daylight saving")
+      expect(
+        ChartAnimationStep.day.advancing(nextDay, direction: .backward, in: timeZone) == start,
+        "reverse animation did not return to the previous civil time")
+
+      let moment = try astrologMoment(for: start, at: timeZone)
+      let nextMoment = try astrologMoment(for: nextDay, at: timeZone)
+      let original = ChartRequest(
+        requestedLocation: "New York, NY, USA", sourceMode: .currentMoment,
+        moment: moment, place: place, style: .solarSystem, canvas: .large,
+        lightBackground: true, solarSystemRadiusAU: 2.5)
+      let animated = original.withMoment(nextMoment)
+      expect(animated.sourceMode == .manual,
+             "animation did not freeze the current-moment chart onto a manual timeline")
+      expect(animated.moment.instant == nextDay, "animation request used the wrong instant")
+      expect(animated.requestedLocation == original.requestedLocation,
+             "animation changed the requested place")
+      expect(animated.style == original.style && animated.canvas == original.canvas,
+             "animation changed the chart rendering options")
+      expect(animated.lightBackground == original.lightBackground,
+             "animation changed the chart background")
+      expect(animated.solarSystemRadiusAU == original.solarSystemRadiusAU,
+             "animation changed the Solar System radius")
+      expect(ChartAnimationRate.allCases.map(\.rawValue) ==
+        ["1 fps", "2 fps", "5 fps", "10 fps", "30 fps", "60 fps", "Maximum"],
+        "animation frame-rate choices changed")
+      expect(ChartAnimationRate.thirty.rawValue == "30 fps",
+             "the default animation rate is unavailable")
+      expect(ChartAnimationRate.five.minimumFrameInterval == 0.2,
+             "smooth animation no longer targets five frames per second")
+      expect(ChartAnimationRate.ten.minimumFrameInterval == 0.1,
+             "fast animation no longer targets ten frames per second")
+      near(
+        ChartAnimationRate.thirty.minimumFrameInterval,
+        1.0 / 30.0,
+        tolerance: 0.000_000_001,
+        "thirty-frame animation interval changed")
+      near(
+        ChartAnimationRate.sixty.minimumFrameInterval,
+        1.0 / 60.0,
+        tolerance: 0.000_000_001,
+        "sixty-frame animation interval changed")
+      expect(ChartAnimationRate.maximum.minimumFrameInterval == 0,
+             "maximum animation is unexpectedly throttled")
+    }
+
     test("Solar System SVG requests engine scale changes") {
       let source = """
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5760 4480">
@@ -305,6 +365,8 @@ enum AstrologChartResultTests {
              "SVG replacement left an uninterpolated JavaScript placeholder")
       expect(updateScript.contains("scripts.forEach(source => window.eval(source))"),
              "SVG replacement does not restore chart interactions")
+      expect(updateScript.contains("nextRoot.dataset.astrologTooltipsDisabled"),
+             "SVG replacement does not preserve animation tooltip suppression")
     }
 
     test("Wheel rendering uses the FLTK elemental palette") {

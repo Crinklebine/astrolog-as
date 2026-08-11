@@ -91,6 +91,10 @@ enum WheelTooltipAnnotator {
     };
     svg.addEventListener("pointerleave", hide);
     svg.addEventListener("pointermove", event => {
+      if (svg.dataset.astrologTooltipsDisabled === "true") {
+        hide();
+        return;
+      }
       const point = svg.createSVGPoint();
       point.x = event.clientX;
       point.y = event.clientY;

@@ -68,6 +68,9 @@ enum SVGDocumentUpdater {
       if (parsed.querySelector("parsererror")) throw new Error("Invalid SVG");
       const nextRoot = document.adoptNode(parsed.documentElement);
       const scripts = Array.from(nextRoot.querySelectorAll("script"), node => node.textContent);
+      if (document.documentElement.dataset.astrologTooltipsDisabled === "true") {
+        nextRoot.dataset.astrologTooltipsDisabled = "true";
+      }
       document.documentElement.replaceWith(nextRoot);
       scripts.forEach(source => window.eval(source));
     })();

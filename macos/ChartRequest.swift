@@ -77,6 +77,76 @@ enum CanvasSize: String, CaseIterable, Identifiable {
   }
 }
 
+enum ChartAnimationDirection: Int {
+  case backward = -1
+  case forward = 1
+}
+
+enum ChartAnimationStep: String, CaseIterable, Identifiable {
+  case minute = "1 minute"
+  case tenMinutes = "10 minutes"
+  case hour = "1 hour"
+  case sixHours = "6 hours"
+  case day = "1 day"
+  case week = "1 week"
+  case month = "1 month"
+  case year = "1 year"
+
+  var id: String { rawValue }
+
+  private var calendarIncrement: (component: Calendar.Component, value: Int) {
+    switch self {
+    case .minute: return (.minute, 1)
+    case .tenMinutes: return (.minute, 10)
+    case .hour: return (.hour, 1)
+    case .sixHours: return (.hour, 6)
+    case .day: return (.day, 1)
+    case .week: return (.day, 7)
+    case .month: return (.month, 1)
+    case .year: return (.year, 1)
+    }
+  }
+
+  func advancing(
+    _ instant: Date,
+    direction: ChartAnimationDirection,
+    in timeZone: TimeZone
+  ) -> Date? {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.locale = Locale(identifier: "en_US_POSIX")
+    calendar.timeZone = timeZone
+    let increment = calendarIncrement
+    return calendar.date(
+      byAdding: increment.component,
+      value: increment.value * direction.rawValue,
+      to: instant)
+  }
+}
+
+enum ChartAnimationRate: String, CaseIterable, Identifiable {
+  case one = "1 fps"
+  case two = "2 fps"
+  case five = "5 fps"
+  case ten = "10 fps"
+  case thirty = "30 fps"
+  case sixty = "60 fps"
+  case maximum = "Maximum"
+
+  var id: String { rawValue }
+
+  var minimumFrameInterval: TimeInterval {
+    switch self {
+    case .one: return 1
+    case .two: return 0.5
+    case .five: return 0.2
+    case .ten: return 0.1
+    case .thirty: return 1.0 / 30.0
+    case .sixty: return 1.0 / 60.0
+    case .maximum: return 0
+    }
+  }
+}
+
 struct ChartRequest {
   static let defaultSolarSystemRadiusAU = 30.0
   static let minimumSolarSystemRadiusAU = 0.0001
@@ -167,6 +237,21 @@ struct ChartRequest {
       solarSystemRadiusAU: max(
         Self.minimumSolarSystemRadiusAU,
         min(Self.maximumSolarSystemRadiusAU, radius)))
+  }
+
+  func withMoment(
+    _ moment: AstrologMoment,
+    sourceMode: AstrologSourceMode = .manual
+  ) -> ChartRequest {
+    ChartRequest(
+      requestedLocation: requestedLocation,
+      sourceMode: sourceMode,
+      moment: moment,
+      place: place,
+      style: style,
+      canvas: canvas,
+      lightBackground: lightBackground,
+      solarSystemRadiusAU: solarSystemRadiusAU)
   }
 }
 

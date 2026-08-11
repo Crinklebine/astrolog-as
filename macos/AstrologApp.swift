@@ -197,6 +197,10 @@ final class ChartViewModel: ObservableObject {
   @Published var generatedChart: RenderedChart?
   @Published var isWorking = false
   @Published private(set) var isUpdatingAppearance = false
+  @Published var animationStep = ChartAnimationStep.day
+  @Published var animationRate = ChartAnimationRate.thirty
+  @Published private(set) var animationDirection: ChartAnimationDirection?
+  @Published private(set) var isAnimationRendering = false
   @Published var statusText = "Ready"
   @Published var errorMessage: String?
 
@@ -208,8 +212,15 @@ final class ChartViewModel: ObservableObject {
   private var solarSystemZoomRevision = 0
   private var solarSystemChartCache: [String: RenderedChart] = [:]
   private var solarSystemChartCacheOrder: [String] = []
+  private var animationTask: Task<Void, Never>?
+  private var animationRevision = 0
+  private var animationFrameCache: [String: RenderedChart] = [:]
+  private var animationFrameCacheOrder: [String] = []
 
-  var isBusy: Bool { isWorking || isUpdatingAppearance }
+  var isAnimating: Bool { animationDirection != nil }
+  var isBusy: Bool {
+    isWorking || isUpdatingAppearance || isAnimating || isAnimationRendering
+  }
 
   let suggestedPlaces = [
     "Seattle, WA, USA",
@@ -301,6 +312,7 @@ final class ChartViewModel: ObservableObject {
         return try AstrologRenderer.render(calculation)
       }.value
       generatedChart = chart
+      clearAnimationFrameCache(keeping: chart)
       cacheSolarSystemChart(chart)
       lastPlaceStore.save(request.requestedLocation)
       displayTimeZone = request.place.timeZone ?? displayTimeZone
@@ -323,6 +335,7 @@ final class ChartViewModel: ObservableObject {
           request.canvas != chart.request.canvas ||
           request.lightBackground != chart.request.lightBackground else { return }
 
+    resetAnimationState()
     cancelQueuedSolarSystemZoom()
     isUpdatingAppearance = true
     errorMessage = nil
@@ -333,6 +346,7 @@ final class ChartViewModel: ObservableObject {
         try AstrologRenderer.render(calculation)
       }.value
       generatedChart = updatedChart
+      clearAnimationFrameCache(keeping: updatedChart)
       clearSolarSystemChartCache()
       cacheSolarSystemChart(updatedChart)
       statusText = "Chart updated"
@@ -393,7 +407,9 @@ final class ChartViewModel: ObservableObject {
           chart.request.style == .solarSystem,
           chartStyle == .solarSystem,
           !isWorking,
-          !isUpdatingAppearance else { return }
+          !isUpdatingAppearance,
+          !isAnimating,
+          !isAnimationRendering else { return }
     let currentRadius = chart.request.solarSystemRadiusAU
     let requestedRadius = reset
       ? ChartRequest.defaultSolarSystemRadiusAU
@@ -480,6 +496,178 @@ final class ChartViewModel: ObservableObject {
     clearSolarSystemChartCache()
   }
 
+  func toggleAnimation(_ direction: ChartAnimationDirection) {
+    if animationDirection == direction {
+      pauseAnimation()
+      return
+    }
+    startAnimation(direction)
+  }
+
+  func pauseAnimation(updateStatus: Bool = true) {
+    animationRevision += 1
+    animationTask?.cancel()
+    animationTask = nil
+    animationDirection = nil
+    isAnimationRendering = false
+    if updateStatus, generatedChart != nil {
+      statusText = "Animation paused"
+    }
+  }
+
+  func stepAnimation(_ direction: ChartAnimationDirection) async {
+    guard generatedChart != nil, !isWorking, !isUpdatingAppearance else { return }
+    pauseAnimation(updateStatus: false)
+    animationRevision += 1
+    let revision = animationRevision
+    _ = await renderAnimationFrame(direction: direction, revision: revision)
+  }
+
+  private func startAnimation(_ direction: ChartAnimationDirection) {
+    guard let chart = generatedChart, !isWorking, !isUpdatingAppearance else { return }
+    pauseAnimation(updateStatus: false)
+    useCurrentMoment = false
+    chartDate = chart.request.moment.instant
+    cacheAnimationFrame(chart)
+    animationDirection = direction
+    statusText = direction == .forward ? "Starting forward animation…" : "Starting reverse animation…"
+    animationRevision += 1
+    let revision = animationRevision
+    animationTask = Task { [weak self] in
+      await self?.runAnimation(direction: direction, revision: revision)
+    }
+  }
+
+  private func runAnimation(
+    direction: ChartAnimationDirection,
+    revision: Int
+  ) async {
+    while !Task.isCancelled, revision == animationRevision {
+      let frameStarted = Date()
+      guard await renderAnimationFrame(direction: direction, revision: revision) else { break }
+      let remainingDelay = animationRate.minimumFrameInterval
+        - Date().timeIntervalSince(frameStarted)
+      if remainingDelay > 0 {
+        do {
+          try await Task.sleep(
+            nanoseconds: UInt64((remainingDelay * 1_000_000_000).rounded()))
+        } catch {
+          break
+        }
+      }
+    }
+    guard revision == animationRevision else { return }
+    animationTask = nil
+    animationDirection = nil
+    isAnimationRendering = false
+  }
+
+  private func renderAnimationFrame(
+    direction: ChartAnimationDirection,
+    revision: Int
+  ) async -> Bool {
+    guard let chart = generatedChart,
+          let timeZone = chart.request.place.timeZone,
+          let nextInstant = animationStep.advancing(
+            chart.request.moment.instant, direction: direction, in: timeZone) else {
+      errorMessage = "The next animation time could not be calculated."
+      statusText = "Animation stopped"
+      return false
+    }
+
+    do {
+      let nextMoment = try astrologMoment(for: nextInstant, at: timeZone)
+      let request = chart.request.withMoment(nextMoment)
+      let nextChart: RenderedChart
+      if let cached = animationFrameCache[animationCacheKey(for: request)] {
+        nextChart = cached
+      } else {
+        isAnimationRendering = true
+        nextChart = try await Task.detached(priority: .userInitiated) {
+          let calculation = try AstrologEngine.calculate(request)
+          return try AstrologRenderer.render(calculation)
+        }.value
+      }
+
+      guard revision == animationRevision, !Task.isCancelled else {
+        if animationFrameCache[animationCacheKey(for: request)] == nil {
+          discardRenderedChart(nextChart)
+        }
+        return false
+      }
+
+      generatedChart = nextChart
+      useCurrentMoment = false
+      displayTimeZone = timeZone
+      chartDate = nextMoment.instant
+      clearSolarSystemChartCache()
+      cacheSolarSystemChart(nextChart)
+      cacheAnimationFrame(nextChart)
+      isAnimationRendering = false
+      errorMessage = nil
+      if animationDirection == nil {
+        let directionText = direction == .forward ? "forward" : "backward"
+        statusText = "Stepped \(directionText) · \(animationStep.rawValue)"
+      } else {
+        let directionText = direction == .forward ? "Forward" : "Reverse"
+        statusText = "\(directionText) · \(animationStep.rawValue) · \(animationRate.rawValue)"
+      }
+      return true
+    } catch {
+      guard revision == animationRevision else { return false }
+      isAnimationRendering = false
+      errorMessage = error.localizedDescription
+      statusText = "Animation stopped"
+      return false
+    }
+  }
+
+  private func animationCacheKey(for request: ChartRequest) -> String {
+    String(
+      format: "%.6f|%@|%@|%@|%d|%.6f",
+      locale: Locale(identifier: "en_US_POSIX"),
+      request.moment.instant.timeIntervalSince1970,
+      request.requestedLocation,
+      request.style.rawValue,
+      request.canvas.rawValue,
+      request.lightBackground ? 1 : 0,
+      request.solarSystemRadiusAU)
+  }
+
+  private func cacheAnimationFrame(_ chart: RenderedChart) {
+    let key = animationCacheKey(for: chart.request)
+    animationFrameCache[key] = chart
+    animationFrameCacheOrder.removeAll { $0 == key }
+    animationFrameCacheOrder.append(key)
+    while animationFrameCacheOrder.count > 8 {
+      let discardedKey = animationFrameCacheOrder.removeFirst()
+      guard let discarded = animationFrameCache.removeValue(forKey: discardedKey),
+            discarded.svgURL != generatedChart?.svgURL else { continue }
+      discardRenderedChart(discarded)
+    }
+  }
+
+  private func clearAnimationFrameCache(keeping chart: RenderedChart? = nil) {
+    let keptURL = chart?.svgURL
+    for cached in animationFrameCache.values where cached.svgURL != keptURL {
+      discardRenderedChart(cached)
+    }
+    animationFrameCache.removeAll()
+    animationFrameCacheOrder.removeAll()
+    if let chart { cacheAnimationFrame(chart) }
+  }
+
+  private func discardRenderedChart(_ chart: RenderedChart) {
+    let directory = chart.svgURL.deletingLastPathComponent()
+    guard directory.deletingLastPathComponent().lastPathComponent == "AstrologPreview" else { return }
+    try? FileManager.default.removeItem(at: directory)
+  }
+
+  private func resetAnimationState() {
+    pauseAnimation(updateStatus: false)
+    clearAnimationFrameCache(keeping: generatedChart)
+  }
+
   func exportSVG() {
     guard let chart = generatedChart else { return }
     let panel = NSSavePanel()
@@ -548,6 +736,7 @@ final class ChartWebView: WKWebView {
   var chartFileURL: URL?
   var clipboardSVGURL: URL?
   private var renderedFileURL: URL?
+  private var tooltipsEnabled = true
 
   func displayChart(at fileURL: URL) {
     chartFileURL = fileURL
@@ -571,6 +760,19 @@ final class ChartWebView: WKWebView {
   private func loadChartFile(_ fileURL: URL) {
     renderedFileURL = fileURL
     loadFileURL(fileURL, allowingReadAccessTo: fileURL.deletingLastPathComponent())
+  }
+
+  func setTooltipsEnabled(_ enabled: Bool) {
+    guard enabled != tooltipsEnabled else { return }
+    tooltipsEnabled = enabled
+    let script = enabled ? """
+      document.documentElement.removeAttribute('data-astrolog-tooltips-disabled');
+      """ : """
+      document.documentElement.setAttribute('data-astrolog-tooltips-disabled', 'true');
+      document.querySelector('#astrolog-as-tooltip-popup')?.setAttribute('display', 'none');
+      document.querySelector('#astrolog-as-aspect-focus')?.setAttribute('display', 'none');
+      """
+    evaluateJavaScript(script)
   }
 
   override func hitTest(_ point: NSPoint) -> NSView? {
@@ -694,6 +896,7 @@ enum SolarSystemZoomCommand {
 struct SVGPreview: NSViewRepresentable {
   let fileURL: URL
   let clipboardSVGURL: URL
+  let tooltipsEnabled: Bool
   let onSolarSystemZoom: (SolarSystemZoomCommand) -> Void
 
   final class Coordinator: NSObject, WKScriptMessageHandler {
@@ -735,6 +938,7 @@ struct SVGPreview: NSViewRepresentable {
     context.coordinator.onSolarSystemZoom = onSolarSystemZoom
     webView.clipboardSVGURL = clipboardSVGURL
     webView.displayChart(at: fileURL)
+    webView.setTooltipsEnabled(tooltipsEnabled)
   }
 
   static func dismantleNSView(_ webView: ChartWebView, coordinator: Coordinator) {
@@ -745,12 +949,14 @@ struct SVGPreview: NSViewRepresentable {
 
 struct ChartImageView: View {
   let chart: RenderedChart
+  let tooltipsEnabled: Bool
   let onSolarSystemZoom: (SolarSystemZoomCommand) -> Void
 
   var body: some View {
     SVGPreview(
       fileURL: chart.svgURL,
       clipboardSVGURL: chart.engineSVGURL,
+      tooltipsEnabled: tooltipsEnabled,
       onSolarSystemZoom: onSolarSystemZoom)
       .background(Color(nsColor: .windowBackgroundColor))
       .accessibilityLabel(
@@ -949,6 +1155,7 @@ struct SidebarView: View {
         TextField("City or place", text: $model.location)
           .textFieldStyle(.roundedBorder)
           .onSubmit { Task { await model.generate() } }
+          .disabled(model.isBusy)
 
         Menu("Suggested places") {
           ForEach(model.suggestedPlaces, id: \.self) { place in
@@ -962,10 +1169,11 @@ struct SidebarView: View {
 
       Section("Moment") {
         Toggle("Use current moment", isOn: $model.useCurrentMoment)
+          .disabled(model.isBusy)
         DatePicker(
           "Date and time", selection: $model.chartDate,
           displayedComponents: [.date, .hourAndMinute])
-          .disabled(model.useCurrentMoment)
+          .disabled(model.useCurrentMoment || model.isBusy)
           .environment(\.timeZone, model.displayTimeZone)
         Text(model.displayTimeZone.identifier)
           .font(.caption)
@@ -1015,7 +1223,7 @@ struct SidebarView: View {
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.large)
-        .disabled(model.isWorking)
+        .disabled(model.isBusy)
       }
 
       if let error = model.errorMessage {
@@ -1034,6 +1242,96 @@ struct SidebarView: View {
     }
     .formStyle(.grouped)
     .frame(minWidth: 285, idealWidth: 310)
+  }
+}
+
+struct AnimationControlsView: View {
+  @ObservedObject var model: ChartViewModel
+
+  var body: some View {
+    HStack(spacing: 10) {
+      HStack(spacing: 4) {
+        Button {
+          Task { await model.stepAnimation(.backward) }
+        } label: {
+          Label("Previous frame", systemImage: "backward.frame.fill")
+            .labelStyle(.iconOnly)
+        }
+        .help("Move backward by \(model.animationStep.rawValue)")
+        .disabled(model.isAnimating || model.isAnimationRendering)
+
+        Button {
+          model.toggleAnimation(.backward)
+        } label: {
+          Label("Play backward", systemImage: "backward.fill")
+            .labelStyle(.iconOnly)
+        }
+        .help(model.animationDirection == .backward ? "Pause" : "Play backward")
+        .foregroundStyle(
+          model.animationDirection == .backward ? Color.accentColor : Color.primary)
+
+        Button {
+          model.pauseAnimation()
+        } label: {
+          Label("Pause", systemImage: "pause.fill")
+            .labelStyle(.iconOnly)
+        }
+        .help("Pause animation")
+        .disabled(!model.isAnimating)
+
+        Button {
+          model.toggleAnimation(.forward)
+        } label: {
+          Label("Play forward", systemImage: "forward.fill")
+            .labelStyle(.iconOnly)
+        }
+        .help(model.animationDirection == .forward ? "Pause" : "Play forward")
+        .foregroundStyle(
+          model.animationDirection == .forward ? Color.accentColor : Color.primary)
+
+        Button {
+          Task { await model.stepAnimation(.forward) }
+        } label: {
+          Label("Next frame", systemImage: "forward.frame.fill")
+            .labelStyle(.iconOnly)
+        }
+        .help("Move forward by \(model.animationStep.rawValue)")
+        .disabled(model.isAnimating || model.isAnimationRendering)
+      }
+      .buttonStyle(.bordered)
+      .controlSize(.small)
+
+      Divider()
+        .frame(height: 20)
+
+      Picker("Step", selection: $model.animationStep) {
+        ForEach(ChartAnimationStep.allCases) { step in
+          Text(step.rawValue).tag(step)
+        }
+      }
+      .pickerStyle(.menu)
+      .frame(width: 155)
+
+      Picker("Speed", selection: $model.animationRate) {
+        ForEach(ChartAnimationRate.allCases) { rate in
+          Text(rate.rawValue).tag(rate)
+        }
+      }
+      .pickerStyle(.menu)
+      .frame(width: 135)
+
+      ProgressView()
+        .controlSize(.small)
+        .frame(width: 16, height: 16)
+        .opacity(model.isAnimationRendering ? 1 : 0)
+        .accessibilityHidden(!model.isAnimationRendering)
+        .help("Rendering the next animation frame")
+    }
+    .padding(.horizontal, 16)
+    .frame(height: 42)
+    .background(Color(nsColor: .controlBackgroundColor).opacity(0.45))
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Chart animation controls")
   }
 }
 
@@ -1078,7 +1376,7 @@ struct ChartDetailView: View {
         if let chart = model.generatedChart {
           switch model.selectedResult {
           case .chart:
-            ChartImageView(chart: chart) { command in
+            ChartImageView(chart: chart, tooltipsEnabled: !model.isAnimating) { command in
               model.queueSolarSystemZoom(command)
             }
           case .positions:
@@ -1098,12 +1396,19 @@ struct ChartDetailView: View {
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+      if model.generatedChart != nil {
+        Divider()
+        AnimationControlsView(model: model)
+      }
+
       Divider()
       HStack {
         Label(
           model.statusText,
-          systemImage: model.isUpdatingAppearance
-            ? "paintbrush" : (model.isWorking ? "clock" : "checkmark.circle"))
+          systemImage: model.isAnimating
+            ? "play.circle"
+            : (model.isUpdatingAppearance
+              ? "paintbrush" : (model.isWorking ? "clock" : "checkmark.circle")))
           .font(.caption)
           .foregroundStyle(.secondary)
         Spacer()
