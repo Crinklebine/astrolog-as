@@ -240,6 +240,15 @@ enum AstrologChartResultTests {
              "Solar System zoom exceeded Astrolog's supported radius")
     }
 
+    test("Chart styles use the intended names and picker order") {
+      expect(
+        ChartStyle.allCases.map(\.rawValue) ==
+          ["Wheel", "Solar System", "Astrocartography", "Aspect Grid"],
+        "chart style names or picker order changed")
+      expect(ChartStyle.astrocartography.engineArguments == ["-L"],
+             "Astrocartography no longer selects Astrolog's map view")
+    }
+
     test("Close Solar System SVG renders filled planet disks") {
       let place = AstrologPlace(
         name: "New York City", regionCode: "ny", timeZoneIdentifier: "America/New_York",

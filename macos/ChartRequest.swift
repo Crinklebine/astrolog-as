@@ -33,27 +33,27 @@ struct LastPlaceStore {
 
 enum ChartStyle: String, CaseIterable, Identifiable {
   case wheel = "Wheel"
-  case aspects = "Aspect Grid"
-  case world = "World Map"
   case solarSystem = "Solar System"
+  case astrocartography = "Astrocartography"
+  case aspects = "Aspect Grid"
 
   var id: String { rawValue }
 
   var symbol: String {
     switch self {
     case .wheel: return "circle.circle"
-    case .aspects: return "square.grid.3x3"
-    case .world: return "globe.europe.africa"
     case .solarSystem: return "sun.max"
+    case .astrocartography: return "globe.europe.africa"
+    case .aspects: return "square.grid.3x3"
     }
   }
 
   var engineArguments: [String] {
     switch self {
     case .wheel: return []
-    case .aspects: return ["-g"]
-    case .world: return ["-L"]
     case .solarSystem: return ["-S"]
+    case .astrocartography: return ["-L"]
+    case .aspects: return ["-g"]
     }
   }
 }
@@ -131,7 +131,7 @@ struct ChartRequest {
       let radius = String(
         format: "%.6f", locale: Locale(identifier: "en_US_POSIX"), solarSystemRadiusAU)
       return ["-YXS", radius]
-    case .aspects, .world:
+    case .astrocartography, .aspects:
       return []
     }
   }
