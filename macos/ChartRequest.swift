@@ -34,6 +34,7 @@ struct LastPlaceStore {
 enum ChartStyle: String, CaseIterable, Identifiable {
   case wheel = "Wheel"
   case solarSystem = "Solar System"
+  case localHorizon = "Local Horizon"
   case astrocartography = "Astrocartography"
   case aspects = "Aspect Grid"
 
@@ -43,6 +44,7 @@ enum ChartStyle: String, CaseIterable, Identifiable {
     switch self {
     case .wheel: return "circle.circle"
     case .solarSystem: return "sun.max"
+    case .localHorizon: return "location.north.circle"
     case .astrocartography: return "globe.europe.africa"
     case .aspects: return "square.grid.3x3"
     }
@@ -52,6 +54,7 @@ enum ChartStyle: String, CaseIterable, Identifiable {
     switch self {
     case .wheel: return []
     case .solarSystem: return ["-S"]
+    case .localHorizon: return ["-Z"]
     case .astrocartography: return ["-L"]
     case .aspects: return ["-g"]
     }
@@ -131,7 +134,7 @@ struct ChartRequest {
       let radius = String(
         format: "%.6f", locale: Locale(identifier: "en_US_POSIX"), solarSystemRadiusAU)
       return ["-YXS", radius]
-    case .astrocartography, .aspects:
+    case .localHorizon, .astrocartography, .aspects:
       return []
     }
   }

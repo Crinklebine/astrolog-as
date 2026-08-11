@@ -108,6 +108,69 @@ enum AstrologChartResultTests {
              "light charts received a dark relationship mask")
     }
 
+    test("Local Horizon SVG contains object tooltips and preserves a clean copy") {
+      guard let result = newYorkReference else { throw TestError("missing New York reference") }
+      let markerCount = result.bodies.count + 2
+      let markerTags = (0..<markerCount).map { index in
+        let x = index == 10 ? 3000 : (index == 11 ? 3005 : 200 + index * 240)
+        let y = index == 10 ? 1500 : (index == 11 ? 1547 : 400 + index * 120)
+        return "<circle r=\"8\" cx=\"\(x)\" cy=\"\(y)\" fill=\"red\"/>"
+      }.joined(separator: "\n")
+      let source = """
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5600 4480">
+      <g>\(markerTags)</g>
+      </svg>
+      """
+
+      let targets = WheelTooltipAnnotator.localHorizonTooltipTargets(
+        in: source, result: result)
+      expect(targets.count == markerCount,
+             "Local Horizon did not receive every primary object tooltip")
+      expect(targets.filter { $0.kind == "body" }.count == result.bodies.count,
+             "Local Horizon lost a body tooltip")
+      expect(targets.filter { $0.kind == "angle" }.count == 2,
+             "Local Horizon lost its Ascendant or Midheaven tooltip")
+      guard let sun = targets.first(where: { $0.key == "Sun" }) else {
+        throw TestError("missing Local Horizon Sun tooltip")
+      }
+      expect(sun.label == "Sun",
+             "Local Horizon Sun tooltip contains more than its object name")
+      expect(targets.allSatisfy { $0.relationships.isEmpty },
+             "Local Horizon tooltips unexpectedly contain aspects")
+      expect(sun.x == Double(200 + (markerCount - 1) * 240),
+             "Local Horizon Sun tooltip is not attached to Astrolog's marker")
+      guard let moon = targets.first(where: { $0.key == "Moon" }),
+            let mercury = targets.first(where: { $0.key == "Merc" }) else {
+        throw TestError("missing crowded Local Horizon targets")
+      }
+      expect(hypot(moon.x - mercury.x, moon.y - mercury.y) > moon.radius + mercury.radius,
+             "crowded Local Horizon glyph tooltips still overlap")
+
+      let temporaryDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("astrolog-horizon-tooltip-\(UUID().uuidString)", isDirectory: true)
+      try FileManager.default.createDirectory(
+        at: temporaryDirectory, withIntermediateDirectories: true)
+      defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+      let engineSVG = temporaryDirectory.appendingPathComponent("astrolog.svg")
+      let displaySVG = temporaryDirectory.appendingPathComponent("chart.svg")
+      try source.write(to: engineSVG, atomically: true, encoding: .utf8)
+      try FileManager.default.copyItem(at: engineSVG, to: displaySVG)
+      try WheelTooltipAnnotator.annotateLocalHorizon(svgAt: displaySVG, result: result)
+
+      let cleanCopy = try String(contentsOf: engineSVG, encoding: .utf8)
+      let interactiveCopy = try String(contentsOf: displaySVG, encoding: .utf8)
+      expect(cleanCopy == source,
+             "Local Horizon annotations changed the clean engine SVG")
+      expect(!cleanCopy.contains("astrolog-as-tooltips"),
+             "clean Local Horizon SVG contains app annotations")
+      expect(interactiveCopy.contains("id=\"astrolog-as-tooltips\""),
+             "interactive Local Horizon SVG is missing tooltips")
+      expect(
+        interactiveCopy.components(separatedBy: "class=\"astrolog-as-tooltip-target\"").count - 1 ==
+          markerCount,
+        "interactive Local Horizon tooltip count changed")
+    }
+
     test("Seattle winter fixed reference ChartResult") {
       let place = AstrologPlace(
         name: "Seattle", regionCode: "wa", timeZoneIdentifier: "America/Los_Angeles",
@@ -243,8 +306,10 @@ enum AstrologChartResultTests {
     test("Chart styles use the intended names and picker order") {
       expect(
         ChartStyle.allCases.map(\.rawValue) ==
-          ["Wheel", "Solar System", "Astrocartography", "Aspect Grid"],
+          ["Wheel", "Solar System", "Local Horizon", "Astrocartography", "Aspect Grid"],
         "chart style names or picker order changed")
+      expect(ChartStyle.localHorizon.engineArguments == ["-Z"],
+             "Local Horizon no longer selects Astrolog's standard sky view")
       expect(ChartStyle.astrocartography.engineArguments == ["-L"],
              "Astrocartography no longer selects Astrolog's map view")
     }

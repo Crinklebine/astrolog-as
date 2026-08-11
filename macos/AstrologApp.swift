@@ -122,6 +122,11 @@ enum AstrologRenderer {
         svgAt: svgURL,
         result: calculation.result,
         lightBackground: request.lightBackground)
+    } else if request.style == .localHorizon {
+      try WheelTooltipAnnotator.annotateLocalHorizon(
+        svgAt: svgURL,
+        result: calculation.result,
+        lightBackground: request.lightBackground)
     } else if request.style == .solarSystem {
       try SolarSystemZoomAnnotator.annotate(svgAt: svgURL)
     }

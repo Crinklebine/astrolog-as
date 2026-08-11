@@ -152,6 +152,12 @@ enum WheelTooltipAnnotator {
     let longitude: Double
   }
 
+  private struct SVGMarker {
+    let x: Double
+    let y: Double
+    let radius: Double
+  }
+
   private struct AspectLine {
     let firstKey: String
     let secondKey: String
@@ -192,6 +198,74 @@ enum WheelTooltipAnnotator {
     var annotated = svg
     annotated.insert(contentsOf: markup, at: closingTag.lowerBound)
     return annotated
+  }
+
+  static func annotateLocalHorizon(
+    svgAt url: URL,
+    result: ChartResult,
+    lightBackground: Bool = false
+  ) throws {
+    let svg = try String(contentsOf: url, encoding: .utf8)
+    let annotated = try annotatedLocalHorizonSVG(
+      svg, result: result, lightBackground: lightBackground)
+    try annotated.write(to: url, atomically: true, encoding: .utf8)
+  }
+
+  static func annotatedLocalHorizonSVG(
+    _ svg: String,
+    result: ChartResult,
+    lightBackground: Bool = false
+  ) throws -> String {
+    if svg.contains("id=\"astrolog-as-tooltips\"") { return svg }
+    guard let viewBox = parseViewBox(svg),
+          let closingTag = svg.range(of: "</svg>", options: .backwards) else {
+      throw WheelTooltipError.invalidSVG
+    }
+    let targets = localHorizonTooltipTargets(in: svg, result: result)
+    guard !targets.isEmpty else { throw WheelTooltipError.invalidSVG }
+    let markup = tooltipMarkup(
+      targets, aspects: [], viewBox: viewBox,
+      lightBackground: lightBackground)
+    var annotated = svg
+    annotated.insert(contentsOf: markup, at: closingTag.lowerBound)
+    return annotated
+  }
+
+  static func localHorizonTooltipTargets(
+    in svg: String,
+    result: ChartResult
+  ) -> [WheelTooltipTarget] {
+    guard let viewBox = parseViewBox(svg) else { return [] }
+    let markers = localHorizonMarkers(in: svg)
+    var items: [(kind: String, key: String, label: String, relationships: [String])] = []
+
+    // DrawObjects() emits Local Horizon markers in descending Astrolog object
+    // index: Midheaven, Ascendant, then the configured bodies in reverse order.
+    for number in [10, 1] {
+      guard let house = result.house(number) else { continue }
+      items.append((
+        kind: "angle", key: house.key,
+        label: house.name, relationships: []))
+    }
+    for body in result.bodies.reversed() {
+      items.append((
+        kind: "body", key: body.key, label: body.name,
+        relationships: []))
+    }
+
+    guard markers.count >= items.count else { return [] }
+    let selectedMarkers = Array(markers.suffix(items.count))
+    let glyphCenters = localHorizonGlyphCenters(
+      for: selectedMarkers, viewBox: viewBox)
+    let glyphScale = localHorizonGlyphScale(viewBox: viewBox)
+    return zip(items, zip(selectedMarkers, glyphCenters)).map { item, placement in
+      let (marker, center) = placement
+      return WheelTooltipTarget(
+        kind: item.kind, key: item.key, label: item.label,
+        relationships: item.relationships,
+        x: center.x, y: center.y,
+        radius: max(marker.radius * 5.0, glyphScale * 4.0))
+    }
   }
 
   static func tooltipTargets(
@@ -259,11 +333,9 @@ enum WheelTooltipAnnotator {
     }
 
     var ringItems = result.bodies.map { body in
-      let house = body.house.map { "House \($0)" } ?? "House unavailable"
-      let motion = body.isRetrograde ? "Retrograde" : "Direct"
       return RingItem(
         kind: "body", key: body.key,
-        label: "\(body.name) · \(body.position.displayText) · \(house) · \(motion)",
+        label: bodyLabel(body),
         longitude: body.position.longitude)
     }
     for number in [1, 10] {
@@ -290,6 +362,65 @@ enum WheelTooltipAnnotator {
     }
 
     return targets
+  }
+
+  private static func bodyLabel(_ body: ChartBody) -> String {
+    let house = body.house.map { "House \($0)" } ?? "House unavailable"
+    let motion = body.isRetrograde ? "Retrograde" : "Direct"
+    return "\(body.name) · \(body.position.displayText) · \(house) · \(motion)"
+  }
+
+  private static func localHorizonMarkers(in svg: String) -> [SVGMarker] {
+    let pattern = #"<circle\s+r=\"([0-9.]+)\"\s+cx=\"(-?[0-9.]+)\"\s+cy=\"(-?[0-9.]+)\"\s+fill=\"[^\"]+\"\s*/>"#
+    guard let expression = try? NSRegularExpression(pattern: pattern) else { return [] }
+    let range = NSRange(svg.startIndex..<svg.endIndex, in: svg)
+    return expression.matches(in: svg, range: range).compactMap { match in
+      func number(_ index: Int) -> Double? {
+        guard let range = Range(match.range(at: index), in: svg) else { return nil }
+        return Double(svg[range])
+      }
+      guard let radius = number(1), let x = number(2), let y = number(3) else { return nil }
+      return SVGMarker(x: x, y: y, radius: radius)
+    }
+  }
+
+  private static func localHorizonGlyphScale(viewBox: SVGViewBox) -> Double {
+    let unscaledHeight = viewBox.height / 8.0
+    let scale = unscaledHeight < 350 ? 1.0 :
+      (unscaledHeight < 750 ? 2.0 : (unscaledHeight < 950 ? 3.0 : 4.0))
+    return scale * 8.0
+  }
+
+  private static func localHorizonGlyphCenters(
+    for descendingMarkers: [SVGMarker],
+    viewBox: SVGViewBox
+  ) -> [(x: Double, y: Double)] {
+    let offset = localHorizonGlyphScale(viewBox: viewBox) * 7.0
+    let glyphDiameter = offset * 2.0
+    let ascendingMarkers = Array(descendingMarkers.reversed())
+    var centers: [(x: Double, y: Double)] = []
+
+    // Mirror Astrolog's DrawObjects() placement pass. Glyphs normally sit
+    // below their exact marker, but crowded glyphs move above it when that
+    // provides more separation from objects already placed.
+    for marker in ascendingMarkers {
+      var belowDistance = Double.greatestFiniteMagnitude
+      var aboveDistance = Double.greatestFiniteMagnitude
+      let belowY = marker.y + offset
+      let aboveY = marker.y - offset
+      for center in centers {
+        belowDistance = min(
+          belowDistance, abs(marker.x - center.x) + abs(belowY - center.y))
+        aboveDistance = min(
+          aboveDistance, abs(marker.x - center.x) + abs(aboveY - center.y))
+      }
+      let crowded = belowDistance < glyphDiameter || aboveDistance < glyphDiameter
+      let tooCloseToBottom = belowY >= viewBox.minimumY + viewBox.height - offset
+      let y = (crowded && belowDistance < aboveDistance) || tooCloseToBottom
+        ? aboveY : belowY
+      centers.append((marker.x, y))
+    }
+    return Array(centers.reversed())
   }
 
   private static func relationshipLabels(
