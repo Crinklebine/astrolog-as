@@ -219,8 +219,9 @@ final class ChartViewModel: ObservableObject {
 
   var isAnimating: Bool { animationDirection != nil }
   var isBusy: Bool {
-    isWorking || isUpdatingAppearance || isAnimating || isAnimationRendering
+    isWorking || isUpdatingAppearance || isAnimating
   }
+  var isInteractionLocked: Bool { isBusy || isAnimationRendering }
 
   let suggestedPlaces = [
     "Seattle, WA, USA",
@@ -278,13 +279,13 @@ final class ChartViewModel: ObservableObject {
   }
 
   func selectSuggestedPlace(_ place: String, currentInstant: Date = Date()) async {
-    guard !isBusy else { return }
+    guard !isInteractionLocked else { return }
     location = place
     await generate(currentInstant: currentInstant, updatesInPlace: true)
   }
 
   private func generate(currentInstant: Date, updatesInPlace: Bool) async {
-    guard !isBusy else { return }
+    guard !isInteractionLocked else { return }
     guard !location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
       errorMessage = "Enter a city or place before generating the chart."
       return
@@ -325,7 +326,7 @@ final class ChartViewModel: ObservableObject {
   }
 
   func updateChartRendering() async {
-    guard let chart = generatedChart, !isBusy else { return }
+    guard let chart = generatedChart, !isInteractionLocked else { return }
 
     let request = chart.request.withRenderingOptions(
       style: chartStyle,
@@ -516,7 +517,8 @@ final class ChartViewModel: ObservableObject {
   }
 
   func stepAnimation(_ direction: ChartAnimationDirection) async {
-    guard generatedChart != nil, !isWorking, !isUpdatingAppearance else { return }
+    guard generatedChart != nil, !isWorking, !isUpdatingAppearance,
+          !isAnimationRendering else { return }
     pauseAnimation(updateStatus: false)
     animationRevision += 1
     let revision = animationRevision
@@ -524,7 +526,8 @@ final class ChartViewModel: ObservableObject {
   }
 
   private func startAnimation(_ direction: ChartAnimationDirection) {
-    guard let chart = generatedChart, !isWorking, !isUpdatingAppearance else { return }
+    guard let chart = generatedChart, !isWorking, !isUpdatingAppearance,
+          !isAnimationRendering else { return }
     pauseAnimation(updateStatus: false)
     useCurrentMoment = false
     chartDate = chart.request.moment.instant
@@ -1208,7 +1211,7 @@ struct SidebarView: View {
 
       Section {
         Button {
-          Task { await model.generate() }
+          generateAfterCommittingEdits()
         } label: {
           HStack {
             Spacer()
@@ -1242,6 +1245,14 @@ struct SidebarView: View {
     }
     .formStyle(.grouped)
     .frame(minWidth: 285, idealWidth: 310)
+    .allowsHitTesting(!model.isAnimationRendering)
+  }
+
+  private func generateAfterCommittingEdits() {
+    NSApp.keyWindow?.makeFirstResponder(nil)
+    DispatchQueue.main.async {
+      Task { await model.generate() }
+    }
   }
 }
 
@@ -1258,7 +1269,8 @@ struct AnimationControlsView: View {
             .labelStyle(.iconOnly)
         }
         .help("Move backward by \(model.animationStep.rawValue)")
-        .disabled(model.isAnimating || model.isAnimationRendering)
+        .disabled(model.isAnimating)
+        .allowsHitTesting(!model.isAnimationRendering)
 
         Button {
           model.toggleAnimation(.backward)
@@ -1296,7 +1308,8 @@ struct AnimationControlsView: View {
             .labelStyle(.iconOnly)
         }
         .help("Move forward by \(model.animationStep.rawValue)")
-        .disabled(model.isAnimating || model.isAnimationRendering)
+        .disabled(model.isAnimating)
+        .allowsHitTesting(!model.isAnimationRendering)
       }
       .buttonStyle(.bordered)
       .controlSize(.small)
@@ -1427,6 +1440,7 @@ struct ChartDetailView: View {
           Label("Export SVG", systemImage: "square.and.arrow.up")
         }
         .disabled(model.generatedChart == nil || model.isBusy)
+        .allowsHitTesting(!model.isAnimationRendering)
 
         Menu {
           Button("PNG Image…") { Task { await model.exportPNG() } }
@@ -1435,6 +1449,7 @@ struct ChartDetailView: View {
           Label("More Exports", systemImage: "ellipsis.circle")
         }
         .disabled(model.generatedChart == nil || model.isBusy)
+        .allowsHitTesting(!model.isAnimationRendering)
       }
     }
   }
