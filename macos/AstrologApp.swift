@@ -168,6 +168,17 @@ enum ResultView: Int, CaseIterable, Identifiable {
   }
 }
 
+enum CSVClipboard {
+  static func copy(_ csv: String) {
+    let pasteboard = NSPasteboard.general
+    let csvType = NSPasteboard.PasteboardType(UTType.commaSeparatedText.identifier)
+    pasteboard.clearContents()
+    pasteboard.declareTypes([csvType, .string], owner: nil)
+    pasteboard.setString(csv, forType: csvType)
+    pasteboard.setString(csv, forType: .string)
+  }
+}
+
 @MainActor
 final class ChartViewModel: ObservableObject {
   @Published var location: String
@@ -793,6 +804,13 @@ struct PositionsResultView: View {
         }
         .width(min: 90, ideal: 110)
       }
+      .contextMenu {
+        Button {
+          CSVClipboard.copy(PositionCSVEncoder.encode(result.bodies))
+        } label: {
+          Label("Copy Positions as CSV", systemImage: "doc.on.doc")
+        }
+      }
 
       Divider()
 
@@ -885,6 +903,13 @@ struct AspectsResultView: View {
           }
           .width(min: 65, ideal: 80)
         }
+        .contextMenu {
+          Button {
+            copyAspectsAsCSV()
+          } label: {
+            Label("Copy Aspects as CSV", systemImage: "doc.on.doc")
+          }
+        }
       }
     }
     .background(Color(nsColor: .textBackgroundColor))
@@ -893,6 +918,10 @@ struct AspectsResultView: View {
   private func orbText(_ orb: Double) -> String {
     let totalMinutes = Int((abs(orb) * 60.0).rounded())
     return "\(totalMinutes / 60)°\(String(format: "%02d", totalMinutes % 60))′"
+  }
+
+  private func copyAspectsAsCSV() {
+    CSVClipboard.copy(AspectCSVEncoder.encode(sortedAspects))
   }
 
   private func color(for kind: AspectKind) -> Color {

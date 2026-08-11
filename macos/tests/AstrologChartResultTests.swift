@@ -208,6 +208,42 @@ enum AstrologChartResultTests {
       near(strongest.power, 19.54, tolerance: 0.001, "strongest aspect power changed")
     }
 
+    test("Aspects encode as spreadsheet-compatible CSV") {
+      let aspects = [
+        ChartAspect(
+          rank: 1, firstBody: "Sun, Sol", secondBody: "Moon \"Luna\"",
+          kind: .square, orbDegrees: -(2 + 22.0 / 60.0), power: 16.18),
+        ChartAspect(
+          rank: 2, firstBody: "Venus", secondBody: "Mars",
+          kind: .trine, orbDegrees: 0.15, power: 9.5),
+      ]
+      let csv = AspectCSVEncoder.encode(aspects)
+      let expected =
+        "Rank,First Body,Aspect,Second Body,Orb,Power\r\n" +
+        "1,\"Sun, Sol\",Square,\"Moon \"\"Luna\"\"\",2°22′,16.18\r\n" +
+        "2,Venus,Trine,Mars,0°09′,9.50\r\n"
+      expect(csv == expected, "aspect CSV formatting or escaping changed")
+    }
+
+    test("Positions encode as spreadsheet-compatible CSV") {
+      let bodies = [
+        ChartBody(
+          key: "Merc", name: "Mercury, \"Hermes\"",
+          position: ZodiacPosition(sign: .leo, degrees: 3, minutes: 4.4),
+          latitude: -1.25, velocity: -0.123, distanceAU: 0.9, house: 7),
+        ChartBody(
+          key: "Sun", name: "Sun",
+          position: ZodiacPosition(sign: .leo, degrees: 18, minutes: 54.0),
+          latitude: 0, velocity: 0.958, distanceAU: 1.0, house: nil),
+      ]
+      let csv = PositionCSVEncoder.encode(bodies)
+      let expected =
+        "Body,Position,Motion,House,Latitude,Velocity\r\n" +
+        "\"Mercury, \"\"Hermes\"\"\",3°04′ Leo,Retrograde,7,1.25° S,-0.123°/day\r\n" +
+        "Sun,18°54′ Leo,Direct,—,0.00° N,+0.958°/day\r\n"
+      expect(csv == expected, "position CSV formatting or escaping changed")
+    }
+
     test("Rendering option changes preserve the calculated chart") {
       let place = AstrologPlace(
         name: "Seattle", regionCode: "wa", timeZoneIdentifier: "America/Los_Angeles",

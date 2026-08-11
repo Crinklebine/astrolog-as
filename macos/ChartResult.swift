@@ -118,6 +118,58 @@ struct ChartAspect: Identifiable {
   var orbMagnitude: Double { abs(orbDegrees) }
 }
 
+enum AspectCSVEncoder {
+  static func encode(_ aspects: [ChartAspect]) -> String {
+    let header = ["Rank", "First Body", "Aspect", "Second Body", "Orb", "Power"]
+    let rows = aspects.map { aspect in
+      [
+        String(aspect.rank),
+        aspect.firstBody,
+        aspect.kind.name,
+        aspect.secondBody,
+        orbText(aspect.orbDegrees),
+        String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), aspect.power),
+      ]
+    }
+    return CSVEncoder.encode(rows: [header] + rows)
+  }
+
+  private static func orbText(_ orb: Double) -> String {
+    let totalMinutes = Int((abs(orb) * 60.0).rounded())
+    return "\(totalMinutes / 60)°\(String(format: "%02d", totalMinutes % 60))′"
+  }
+}
+
+enum PositionCSVEncoder {
+  static func encode(_ bodies: [ChartBody]) -> String {
+    let header = ["Body", "Position", "Motion", "House", "Latitude", "Velocity"]
+    let rows = bodies.map { body in
+      [
+        body.name,
+        body.position.displayText,
+        body.isRetrograde ? "Retrograde" : "Direct",
+        body.house.map(String.init) ?? "—",
+        body.latitudeText,
+        body.velocityText,
+      ]
+    }
+    return CSVEncoder.encode(rows: [header] + rows)
+  }
+}
+
+private enum CSVEncoder {
+  static func encode(rows: [[String]]) -> String {
+    rows.map { $0.map(escapedField).joined(separator: ",") }
+      .joined(separator: "\r\n") + "\r\n"
+  }
+
+  private static func escapedField(_ value: String) -> String {
+    guard value.contains(",") || value.contains("\"") ||
+            value.contains("\r") || value.contains("\n") else { return value }
+    return "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\""
+  }
+}
+
 struct ChartMetadata {
   let engineVersion: String
   let chartName: String
