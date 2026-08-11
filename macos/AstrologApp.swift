@@ -178,6 +178,10 @@ final class ChartViewModel: ObservableObject {
   private var pendingSolarSystemZoomDelta = 0.0
   private var solarSystemZoomResetRequested = false
   private var solarSystemZoomTask: Task<Void, Never>?
+  private var solarSystemZoomTaskID: UUID?
+  private var solarSystemZoomRevision = 0
+  private var solarSystemChartCache: [String: RenderedChart] = [:]
+  private var solarSystemChartCacheOrder: [String] = []
 
   var isBusy: Bool { isWorking || isUpdatingAppearance }
 
@@ -237,6 +241,7 @@ final class ChartViewModel: ObservableObject {
       return
     }
 
+    resetSolarSystemZoomState()
     isWorking = true
     errorMessage = nil
     statusText = "Calculating chart…"
@@ -247,6 +252,7 @@ final class ChartViewModel: ObservableObject {
         return try AstrologRenderer.render(calculation)
       }.value
       generatedChart = chart
+      cacheSolarSystemChart(chart)
       lastPlaceStore.save(request.requestedLocation)
       displayTimeZone = request.place.timeZone ?? displayTimeZone
       chartDate = request.moment.instant
@@ -269,14 +275,18 @@ final class ChartViewModel: ObservableObject {
           request.canvas != chart.request.canvas ||
           request.lightBackground != chart.request.lightBackground else { return }
 
+    cancelQueuedSolarSystemZoom()
     isUpdatingAppearance = true
     errorMessage = nil
     statusText = "Updating chart…"
     let calculation = CalculatedChart(request: request, result: chart.result)
     do {
-      generatedChart = try await Task.detached(priority: .userInitiated) {
+      let updatedChart = try await Task.detached(priority: .userInitiated) {
         try AstrologRenderer.render(calculation)
       }.value
+      generatedChart = updatedChart
+      clearSolarSystemChartCache()
+      cacheSolarSystemChart(updatedChart)
       statusText = "Chart updated"
     } catch {
       chartStyle = chart.request.style
@@ -298,20 +308,44 @@ final class ChartViewModel: ObservableObject {
       solarSystemZoomResetRequested = true
     }
 
-    solarSystemZoomTask?.cancel()
+    scheduleSolarSystemZoomIfNeeded()
+  }
+
+  private func scheduleSolarSystemZoomIfNeeded() {
+    guard solarSystemZoomTask == nil else { return }
+    let taskID = UUID()
+    solarSystemZoomTaskID = taskID
     solarSystemZoomTask = Task { [weak self] in
-      try? await Task.sleep(nanoseconds: 75_000_000)
-      guard !Task.isCancelled, let self else { return }
+      guard let self else { return }
+      do {
+        try await Task.sleep(nanoseconds: 30_000_000)
+      } catch {
+        if self.solarSystemZoomTaskID == taskID {
+          self.solarSystemZoomTask = nil
+          self.solarSystemZoomTaskID = nil
+        }
+        return
+      }
       let delta = max(-500, min(500, self.pendingSolarSystemZoomDelta))
       let reset = self.solarSystemZoomResetRequested
       self.pendingSolarSystemZoomDelta = 0
       self.solarSystemZoomResetRequested = false
       await self.applySolarSystemZoom(delta: delta, reset: reset)
+      guard self.solarSystemZoomTaskID == taskID else { return }
+      self.solarSystemZoomTask = nil
+      self.solarSystemZoomTaskID = nil
+      if self.pendingSolarSystemZoomDelta != 0 || self.solarSystemZoomResetRequested {
+        self.scheduleSolarSystemZoomIfNeeded()
+      }
     }
   }
 
   private func applySolarSystemZoom(delta: Double, reset: Bool) async {
-    guard let chart = generatedChart, chart.request.style == .solarSystem, !isBusy else { return }
+    guard let chart = generatedChart,
+          chart.request.style == .solarSystem,
+          chartStyle == .solarSystem,
+          !isWorking,
+          !isUpdatingAppearance else { return }
     let currentRadius = chart.request.solarSystemRadiusAU
     let requestedRadius = reset
       ? ChartRequest.defaultSolarSystemRadiusAU
@@ -326,23 +360,76 @@ final class ChartViewModel: ObservableObject {
       return
     }
 
-    isUpdatingAppearance = true
-    errorMessage = nil
-    statusText = "Scaling Solar System…"
     let request = chart.request.withSolarSystemRadiusAU(radius)
+    if let cachedChart = solarSystemChartCache[solarSystemCacheKey(for: request)] {
+      generatedChart = cachedChart
+      statusText = solarSystemRadiusStatus(radius)
+      return
+    }
+
+    let revision = solarSystemZoomRevision
     let calculation = CalculatedChart(request: request, result: chart.result)
     do {
-      generatedChart = try await Task.detached(priority: .userInitiated) {
+      let renderedChart = try await Task.detached(priority: .userInitiated) {
         try AstrologRenderer.render(calculation)
       }.value
-      statusText = String(
-        format: "Solar System radius: %.3g AU",
-        locale: Locale(identifier: "en_US_POSIX"), radius)
+      guard revision == solarSystemZoomRevision,
+            chartStyle == .solarSystem else { return }
+      generatedChart = renderedChart
+      cacheSolarSystemChart(renderedChart)
+      statusText = solarSystemRadiusStatus(radius)
     } catch {
+      guard revision == solarSystemZoomRevision else { return }
       errorMessage = "Astrolog could not render that zoom level. The previous chart was kept."
       statusText = "Zoom unchanged"
     }
-    isUpdatingAppearance = false
+  }
+
+  private func solarSystemRadiusStatus(_ radius: Double) -> String {
+    String(
+      format: "Solar System radius: %.3g AU",
+      locale: Locale(identifier: "en_US_POSIX"), radius)
+  }
+
+  private func solarSystemCacheKey(for request: ChartRequest) -> String {
+    String(
+      format: "%@|%@|%d|%.6f",
+      locale: Locale(identifier: "en_US_POSIX"),
+      request.canvas.rawValue,
+      request.style.rawValue,
+      request.lightBackground ? 1 : 0,
+      request.solarSystemRadiusAU)
+  }
+
+  private func cacheSolarSystemChart(_ chart: RenderedChart) {
+    guard chart.request.style == .solarSystem else { return }
+    let key = solarSystemCacheKey(for: chart.request)
+    solarSystemChartCache[key] = chart
+    solarSystemChartCacheOrder.removeAll { $0 == key }
+    solarSystemChartCacheOrder.append(key)
+    while solarSystemChartCacheOrder.count > 16 {
+      let discardedKey = solarSystemChartCacheOrder.removeFirst()
+      solarSystemChartCache.removeValue(forKey: discardedKey)
+    }
+  }
+
+  private func clearSolarSystemChartCache() {
+    solarSystemChartCache.removeAll()
+    solarSystemChartCacheOrder.removeAll()
+  }
+
+  private func cancelQueuedSolarSystemZoom() {
+    solarSystemZoomRevision += 1
+    solarSystemZoomTask?.cancel()
+    solarSystemZoomTask = nil
+    solarSystemZoomTaskID = nil
+    pendingSolarSystemZoomDelta = 0
+    solarSystemZoomResetRequested = false
+  }
+
+  private func resetSolarSystemZoomState() {
+    cancelQueuedSolarSystemZoom()
+    clearSolarSystemChartCache()
   }
 
   func exportSVG() {
@@ -411,6 +498,31 @@ final class ChartViewModel: ObservableObject {
 
 final class ChartWebView: WKWebView {
   var chartFileURL: URL?
+  private var renderedFileURL: URL?
+
+  func displayChart(at fileURL: URL) {
+    chartFileURL = fileURL
+    guard renderedFileURL != fileURL else { return }
+    let hasRenderedChart = renderedFileURL != nil
+    renderedFileURL = fileURL
+
+    guard hasRenderedChart,
+          let svg = try? String(contentsOf: fileURL, encoding: .utf8),
+          let script = try? SVGDocumentUpdater.replacementJavaScript(for: svg) else {
+      loadChartFile(fileURL)
+      return
+    }
+
+    evaluateJavaScript(script) { [weak self] _, error in
+      guard let self, error != nil, self.renderedFileURL == fileURL else { return }
+      self.loadChartFile(fileURL)
+    }
+  }
+
+  private func loadChartFile(_ fileURL: URL) {
+    renderedFileURL = fileURL
+    loadFileURL(fileURL, allowingReadAccessTo: fileURL.deletingLastPathComponent())
+  }
 
   override func hitTest(_ point: NSPoint) -> NSView? {
     guard let event = NSApp.currentEvent else { return super.hitTest(point) }
@@ -504,7 +616,11 @@ final class ChartWebView: WKWebView {
   }
 
   @objc private func reloadChart(_ sender: Any?) {
-    reload()
+    if let chartFileURL {
+      loadChartFile(chartFileURL)
+    } else {
+      reload()
+    }
   }
 }
 
@@ -553,10 +669,7 @@ struct SVGPreview: NSViewRepresentable {
 
   func updateNSView(_ webView: ChartWebView, context: Context) {
     context.coordinator.onSolarSystemZoom = onSolarSystemZoom
-    webView.chartFileURL = fileURL
-    if webView.url != fileURL {
-      webView.loadFileURL(fileURL, allowingReadAccessTo: fileURL.deletingLastPathComponent())
-    }
+    webView.displayChart(at: fileURL)
   }
 
   static func dismantleNSView(_ webView: ChartWebView, coordinator: Coordinator) {

@@ -54,3 +54,23 @@ enum SolarSystemZoomAnnotator {
     return annotated
   }
 }
+
+enum SVGDocumentUpdater {
+  static func replacementJavaScript(for svg: String) throws -> String {
+    let encoded = try JSONSerialization.data(withJSONObject: [svg])
+    guard let json = String(data: encoded, encoding: .utf8) else {
+      throw SolarSystemZoomError.invalidSVG
+    }
+    return #"""
+    (() => {
+      const markup = \#(json)[0];
+      const parsed = new DOMParser().parseFromString(markup, "image/svg+xml");
+      if (parsed.querySelector("parsererror")) throw new Error("Invalid SVG");
+      const nextRoot = document.adoptNode(parsed.documentElement);
+      const scripts = Array.from(nextRoot.querySelectorAll("script"), node => node.textContent);
+      document.documentElement.replaceWith(nextRoot);
+      scripts.forEach(source => window.eval(source));
+    })();
+    """#
+  }
+}

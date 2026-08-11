@@ -197,6 +197,15 @@ enum AstrologChartResultTests {
       let annotatedAgain = try SolarSystemZoomAnnotator.annotatedSVG(annotated)
       expect(annotatedAgain == annotated,
              "Solar System zoom annotation is not idempotent")
+      let updateScript = try SVGDocumentUpdater.replacementJavaScript(for: annotated)
+      expect(updateScript.contains("document.documentElement.replaceWith(nextRoot)"),
+             "SVG updates still require a WebKit navigation")
+      expect(updateScript.contains("astrolog-as-solar-zoom"),
+             "SVG replacement did not safely embed the new chart")
+      expect(!updateScript.contains("#(json)"),
+             "SVG replacement left an uninterpolated JavaScript placeholder")
+      expect(updateScript.contains("scripts.forEach(source => window.eval(source))"),
+             "SVG replacement does not restore chart interactions")
     }
 
     test("Wheel rendering uses the FLTK elemental palette") {
