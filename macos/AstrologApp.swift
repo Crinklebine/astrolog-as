@@ -102,6 +102,7 @@ enum AstrologRenderer {
       .appendingPathComponent("AstrologPreview", isDirectory: true)
       .appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: previewDirectory, withIntermediateDirectories: true)
+    let engineSVGURL = previewDirectory.appendingPathComponent("astrolog.svg")
     let svgURL = previewDirectory.appendingPathComponent("chart.svg")
     let size = request.canvas.dimensions
 
@@ -109,12 +110,13 @@ enum AstrologRenderer {
       + request.graphicEffectArguments
     graphicArguments += ["-Xx0", "-Xw", String(size.0), String(size.1)]
     if request.lightBackground { graphicArguments.append("-Xr") }
-    graphicArguments += ["-XV", "-Xo", svgURL.path]
+    graphicArguments += ["-XV", "-Xo", engineSVGURL.path]
     _ = try AstrologEngine.run(arguments: graphicArguments)
 
-    guard FileManager.default.fileExists(atPath: svgURL.path) else {
+    guard FileManager.default.fileExists(atPath: engineSVGURL.path) else {
       throw AstrologAppError.missingOutput
     }
+    try FileManager.default.copyItem(at: engineSVGURL, to: svgURL)
     if request.style == .wheel {
       try WheelTooltipAnnotator.annotate(
         svgAt: svgURL,
@@ -124,7 +126,10 @@ enum AstrologRenderer {
       try SolarSystemZoomAnnotator.annotate(svgAt: svgURL)
     }
 
-    return RenderedChart(calculation: calculation, svgURL: svgURL)
+    return RenderedChart(
+      calculation: calculation,
+      svgURL: svgURL,
+      engineSVGURL: engineSVGURL)
   }
 
   static func generatePNG(_ calculation: CalculatedChart, at outputURL: URL) throws {
@@ -498,6 +503,7 @@ final class ChartViewModel: ObservableObject {
 
 final class ChartWebView: WKWebView {
   var chartFileURL: URL?
+  var clipboardSVGURL: URL?
   private var renderedFileURL: URL?
 
   func displayChart(at fileURL: URL) {
@@ -564,51 +570,64 @@ final class ChartWebView: WKWebView {
   }
 
   @objc private func copyChart(_ sender: Any?) {
-    guard let chartFileURL,
-          let imageData = try? Data(contentsOf: chartFileURL),
-          let image = NSImage(data: imageData),
-          let rasterImage = rasterizedClipboardImage(from: image),
-          let tiffData = rasterImage.tiffRepresentation else {
+    guard let clipboardSVGURL,
+          let svgData = try? Data(contentsOf: clipboardSVGURL) else {
       NSSound.beep()
       return
     }
-
     let pasteboard = NSPasteboard.general
     let svgType = NSPasteboard.PasteboardType("public.svg-image")
-    let isSVG = chartFileURL.pathExtension.lowercased() == "svg"
-    var types: [NSPasteboard.PasteboardType] = [.tiff]
-    if isSVG { types.insert(svgType, at: 0) }
-    var pngData: Data?
-    if let bitmap = NSBitmapImageRep(data: tiffData) {
-      pngData = bitmap.representation(using: .png, properties: [:])
-      if pngData != nil { types.append(.png) }
-    }
-
     pasteboard.clearContents()
-    pasteboard.declareTypes(types, owner: nil)
-    if isSVG { pasteboard.setData(imageData, forType: svgType) }
-    pasteboard.setData(tiffData, forType: .tiff)
-    if let pngData { pasteboard.setData(pngData, forType: .png) }
+    pasteboard.declareTypes([svgType], owner: nil)
+    pasteboard.setData(svgData, forType: svgType)
+
+    let suppressOverlays = """
+    (() => {
+      const nodes = document.querySelectorAll(
+        '#astrolog-as-aspect-focus, #astrolog-as-tooltips, #astrolog-as-tooltip-popup');
+      nodes.forEach(node => {
+        node.dataset.astrologCopyDisplay = node.style.display;
+        node.style.display = 'none';
+      });
+    })();
+    """
+    evaluateJavaScript(suppressOverlays) { [weak self] _, _ in
+      guard let self else { return }
+      let configuration = WKSnapshotConfiguration()
+      configuration.rect = self.bounds
+      configuration.snapshotWidth = NSNumber(
+        value: max(1, min(1800, self.bounds.width * 2)))
+      self.takeSnapshot(with: configuration) { [weak self] image, error in
+        guard let self else { return }
+        self.restoreClipboardOverlays()
+        guard error == nil,
+              let image,
+              let tiffData = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData),
+              let pngData = bitmap.representation(using: .png, properties: [:]) else {
+          NSSound.beep()
+          return
+        }
+
+        pasteboard.clearContents()
+        pasteboard.declareTypes([svgType, .png, .tiff], owner: nil)
+        pasteboard.setData(svgData, forType: svgType)
+        pasteboard.setData(pngData, forType: .png)
+        pasteboard.setData(tiffData, forType: .tiff)
+      }
+    }
   }
 
-  private func rasterizedClipboardImage(from source: NSImage) -> NSImage? {
-    let maximumDimension = 1800.0
-    let sourceSize = source.size
-    guard sourceSize.width > 0, sourceSize.height > 0 else { return nil }
-    let scale = min(1, maximumDimension / max(sourceSize.width, sourceSize.height))
-    let targetSize = NSSize(
-      width: max(1, (sourceSize.width * scale).rounded()),
-      height: max(1, (sourceSize.height * scale).rounded()))
-    let image = NSImage(size: targetSize)
-    image.lockFocus()
-    NSGraphicsContext.current?.imageInterpolation = .high
-    source.draw(
-      in: NSRect(origin: .zero, size: targetSize),
-      from: NSRect(origin: .zero, size: sourceSize),
-      operation: .copy,
-      fraction: 1)
-    image.unlockFocus()
-    return image
+  private func restoreClipboardOverlays() {
+    evaluateJavaScript("""
+    (() => {
+      const nodes = document.querySelectorAll('[data-astrolog-copy-display]');
+      nodes.forEach(node => {
+        node.style.display = node.dataset.astrologCopyDisplay;
+        delete node.dataset.astrologCopyDisplay;
+      });
+    })();
+    """)
   }
 
   @objc private func navigateBack(_ sender: Any?) {
@@ -631,6 +650,7 @@ enum SolarSystemZoomCommand {
 
 struct SVGPreview: NSViewRepresentable {
   let fileURL: URL
+  let clipboardSVGURL: URL
   let onSolarSystemZoom: (SolarSystemZoomCommand) -> Void
 
   final class Coordinator: NSObject, WKScriptMessageHandler {
@@ -664,11 +684,13 @@ struct SVGPreview: NSViewRepresentable {
     let webView = ChartWebView(frame: .zero, configuration: configuration)
     webView.setValue(false, forKey: "drawsBackground")
     webView.allowsMagnification = false
+    webView.clipboardSVGURL = clipboardSVGURL
     return webView
   }
 
   func updateNSView(_ webView: ChartWebView, context: Context) {
     context.coordinator.onSolarSystemZoom = onSolarSystemZoom
+    webView.clipboardSVGURL = clipboardSVGURL
     webView.displayChart(at: fileURL)
   }
 
@@ -683,7 +705,10 @@ struct ChartImageView: View {
   let onSolarSystemZoom: (SolarSystemZoomCommand) -> Void
 
   var body: some View {
-    SVGPreview(fileURL: chart.svgURL, onSolarSystemZoom: onSolarSystemZoom)
+    SVGPreview(
+      fileURL: chart.svgURL,
+      clipboardSVGURL: chart.engineSVGURL,
+      onSolarSystemZoom: onSolarSystemZoom)
       .background(Color(nsColor: .windowBackgroundColor))
       .accessibilityLabel(
         "\(chart.request.style.rawValue) for \(chart.result.metadata.place.displayName), " +

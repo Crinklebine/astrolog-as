@@ -175,6 +175,7 @@ struct CalculatedChart {
 struct RenderedChart {
   let calculation: CalculatedChart
   let svgURL: URL
+  let engineSVGURL: URL
 
   var request: ChartRequest { calculation.request }
   var result: ChartResult { calculation.result }
