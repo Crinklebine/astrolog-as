@@ -245,6 +245,16 @@ final class ChartViewModel: ObservableObject {
   }
 
   func generate(currentInstant: Date = Date()) async {
+    await generate(currentInstant: currentInstant, updatesInPlace: false)
+  }
+
+  func selectSuggestedPlace(_ place: String, currentInstant: Date = Date()) async {
+    guard !isBusy else { return }
+    location = place
+    await generate(currentInstant: currentInstant, updatesInPlace: true)
+  }
+
+  private func generate(currentInstant: Date, updatesInPlace: Bool) async {
     guard !isBusy else { return }
     guard !location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
       errorMessage = "Enter a city or place before generating the chart."
@@ -252,9 +262,20 @@ final class ChartViewModel: ObservableObject {
     }
 
     resetSolarSystemZoomState()
-    isWorking = true
+    if updatesInPlace {
+      isUpdatingAppearance = true
+    } else {
+      isWorking = true
+    }
+    defer {
+      if updatesInPlace {
+        isUpdatingAppearance = false
+      } else {
+        isWorking = false
+      }
+    }
     errorMessage = nil
-    statusText = "Calculating chart…"
+    statusText = updatesInPlace ? "Updating place…" : "Calculating chart…"
     do {
       let request = try request(for: currentInstant)
       let chart = try await Task.detached(priority: .userInitiated) {
@@ -271,7 +292,6 @@ final class ChartViewModel: ObservableObject {
       errorMessage = error.localizedDescription
       statusText = "Couldn’t generate chart"
     }
-    isWorking = false
   }
 
   func updateChartRendering() async {
@@ -896,9 +916,12 @@ struct SidebarView: View {
 
         Menu("Suggested places") {
           ForEach(model.suggestedPlaces, id: \.self) { place in
-            Button(place) { model.location = place }
+            Button(place) {
+              Task { await model.selectSuggestedPlace(place) }
+            }
           }
         }
+        .disabled(model.isBusy)
       }
 
       Section("Moment") {
