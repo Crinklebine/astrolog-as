@@ -198,9 +198,11 @@ final class ChartViewModel: ObservableObject {
   let suggestedPlaces = [
     "Seattle, WA, USA",
     "London, England",
+    "Douglas, Isle of Man",
     "New York, NY, USA",
     "Los Angeles, CA, USA",
     "Sydney, Australia",
+    "Bangkok, Thailand",
     "Tokyo, Japan",
   ]
 
