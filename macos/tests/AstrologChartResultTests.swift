@@ -173,6 +173,30 @@ enum AstrologChartResultTests {
       expect(updated.sourceMode == original.sourceMode, "rerender changed the source mode")
       expect(updated.style == .aspects, "chart style did not change")
       expect(updated.canvas == .large, "detail level did not change")
+      expect(updated.solarSystemRadiusAU == original.solarSystemRadiusAU,
+             "rerender changed the Solar System scale")
+    }
+
+    test("Solar System SVG requests engine scale changes") {
+      let source = """
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5760 4480">
+      <g/>
+      </svg>
+      """
+      let annotated = try SolarSystemZoomAnnotator.annotatedSVG(source)
+      expect(annotated.contains("id=\"astrolog-as-solar-zoom\""),
+             "Solar System zoom script was not added")
+      expect(annotated.contains("messageHandlers?.solarSystemZoom"),
+             "Solar System zoom is not connected to the native renderer")
+      expect(annotated.contains("event.deltaY * modeScale"),
+             "Solar System zoom does not normalize wheel input")
+      expect(!annotated.contains("setAttribute(\"viewBox\""),
+             "Solar System zoom still magnifies the existing SVG")
+      expect(annotated.contains("{ passive: false }"),
+             "Solar System wheel events cannot suppress page scrolling")
+      let annotatedAgain = try SolarSystemZoomAnnotator.annotatedSVG(annotated)
+      expect(annotatedAgain == annotated,
+             "Solar System zoom annotation is not idempotent")
     }
 
     test("Wheel rendering uses the FLTK elemental palette") {
@@ -190,11 +214,58 @@ enum AstrologChartResultTests {
         requestedLocation: "Seattle, WA, USA", sourceMode: .manual,
         moment: moment, place: place, style: .aspects, canvas: .compact,
         lightBackground: false)
+      let solar = ChartRequest(
+        requestedLocation: "Seattle, WA, USA", sourceMode: .manual,
+        moment: moment, place: place, style: .solarSystem, canvas: .compact,
+        lightBackground: false, solarSystemRadiusAU: 12.5)
 
       expect(wheel.graphicEffectArguments == ["-Xv", "1", "-YXk", "-YXk0"],
              "wheel is missing the standard elemental fill settings")
       expect(grid.graphicEffectArguments.isEmpty,
              "wheel-only color settings leaked into another chart style")
+      expect(solar.graphicEffectArguments == ["-YXS", "12.500000"],
+             "Solar System radius was not passed to Astrolog")
+      expect(solar.withSolarSystemRadiusAU(0.00001).solarSystemRadiusAU == 0.0001,
+             "Solar System zoom exceeded Astrolog's supported close range")
+      expect(solar.withSolarSystemRadiusAU(500).solarSystemRadiusAU == 360,
+             "Solar System zoom exceeded Astrolog's supported radius")
+    }
+
+    test("Close Solar System SVG renders filled planet disks") {
+      let place = AstrologPlace(
+        name: "New York City", regionCode: "ny", timeZoneIdentifier: "America/New_York",
+        longitudeDegreesWest: 74.006, latitudeDegreesNorth: 40.7143)
+      let moment = try astrologMoment(
+        for: parseISO("2026-08-05T21:57:00Z"),
+        at: requireZone(place.timeZoneIdentifier))
+      let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("AstrologSolarSystemTests", isDirectory: true)
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      defer { try? FileManager.default.removeItem(at: directory) }
+      let svgURL = directory.appendingPathComponent("close-solar-system.svg")
+      let process = Process()
+      let errors = Pipe()
+      process.executableURL = engineURL
+      process.currentDirectoryURL = resourcesURL
+      process.arguments = astrologInputArguments(
+        moment: moment, place: place, chartName: "Close Solar System") + [
+          "-S", "-YXS", "1", "-Xx0", "-Xw", "700", "560",
+          "-XV", "-Xo", svgURL.path,
+        ]
+      process.standardInput = FileHandle.nullDevice
+      process.standardOutput = FileHandle.nullDevice
+      process.standardError = errors
+      try process.run()
+      let errorData = errors.fileHandleForReading.readDataToEndOfFile()
+      process.waitUntilExit()
+      guard process.terminationStatus == 0 else {
+        throw TestError(
+          "close SVG exited with status \(process.terminationStatus): " +
+          String(decoding: errorData, as: UTF8.self))
+      }
+      let svg = try String(contentsOf: svgURL, encoding: .utf8)
+      expect(svg.contains("fill=\""), "close SVG omitted filled planet disks")
     }
 
     test("Graphic sidebar uses a bounded place label") {

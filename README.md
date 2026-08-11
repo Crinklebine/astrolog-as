@@ -26,6 +26,8 @@ open it.
 
 - Native macOS controls for place, date, time, chart style, and appearance.
 - Wheel, Aspect Grid, World Map, and Solar System graphics.
+- Engine-scale mouse-wheel zooming in the Solar System view, with double-click
+  reset and close-range filled planetary disks.
 - A structured Positions view generated from the same complete chart result as
   the graphic view.
 - A sortable Aspects view with rank, bodies, aspect type, orb, and power.

@@ -120,6 +120,8 @@ enum AstrologRenderer {
         svgAt: svgURL,
         result: calculation.result,
         lightBackground: request.lightBackground)
+    } else if request.style == .solarSystem {
+      try SolarSystemZoomAnnotator.annotate(svgAt: svgURL)
     }
 
     return RenderedChart(calculation: calculation, svgURL: svgURL)
@@ -173,6 +175,9 @@ final class ChartViewModel: ObservableObject {
   @Published var errorMessage: String?
 
   private let lastPlaceStore: LastPlaceStore
+  private var pendingSolarSystemZoomDelta = 0.0
+  private var solarSystemZoomResetRequested = false
+  private var solarSystemZoomTask: Task<Void, Never>?
 
   var isBusy: Bool { isWorking || isUpdatingAppearance }
 
@@ -279,6 +284,63 @@ final class ChartViewModel: ObservableObject {
       lightBackground = chart.request.lightBackground
       errorMessage = error.localizedDescription
       statusText = "Couldn’t update chart"
+    }
+    isUpdatingAppearance = false
+  }
+
+  func queueSolarSystemZoom(_ command: SolarSystemZoomCommand) {
+    guard generatedChart?.request.style == .solarSystem else { return }
+    switch command {
+    case .change(let delta):
+      pendingSolarSystemZoomDelta += delta
+    case .reset:
+      pendingSolarSystemZoomDelta = 0
+      solarSystemZoomResetRequested = true
+    }
+
+    solarSystemZoomTask?.cancel()
+    solarSystemZoomTask = Task { [weak self] in
+      try? await Task.sleep(nanoseconds: 75_000_000)
+      guard !Task.isCancelled, let self else { return }
+      let delta = max(-500, min(500, self.pendingSolarSystemZoomDelta))
+      let reset = self.solarSystemZoomResetRequested
+      self.pendingSolarSystemZoomDelta = 0
+      self.solarSystemZoomResetRequested = false
+      await self.applySolarSystemZoom(delta: delta, reset: reset)
+    }
+  }
+
+  private func applySolarSystemZoom(delta: Double, reset: Bool) async {
+    guard let chart = generatedChart, chart.request.style == .solarSystem, !isBusy else { return }
+    let currentRadius = chart.request.solarSystemRadiusAU
+    let requestedRadius = reset
+      ? ChartRequest.defaultSolarSystemRadiusAU
+      : currentRadius * exp(delta * 0.002)
+    let radius = max(
+      ChartRequest.minimumSolarSystemRadiusAU,
+      min(ChartRequest.maximumSolarSystemRadiusAU, requestedRadius))
+    guard abs(radius - currentRadius) > 0.000001 else {
+      if radius == ChartRequest.minimumSolarSystemRadiusAU {
+        statusText = "Maximum zoom: 0.0001 AU radius"
+      }
+      return
+    }
+
+    isUpdatingAppearance = true
+    errorMessage = nil
+    statusText = "Scaling Solar System…"
+    let request = chart.request.withSolarSystemRadiusAU(radius)
+    let calculation = CalculatedChart(request: request, result: chart.result)
+    do {
+      generatedChart = try await Task.detached(priority: .userInitiated) {
+        try AstrologRenderer.render(calculation)
+      }.value
+      statusText = String(
+        format: "Solar System radius: %.3g AU",
+        locale: Locale(identifier: "en_US_POSIX"), radius)
+    } catch {
+      errorMessage = "Astrolog could not render that zoom level. The previous chart was kept."
+      statusText = "Zoom unchanged"
     }
     isUpdatingAppearance = false
   }
@@ -446,30 +508,69 @@ final class ChartWebView: WKWebView {
   }
 }
 
+enum SolarSystemZoomCommand {
+  case change(Double)
+  case reset
+}
+
 struct SVGPreview: NSViewRepresentable {
   let fileURL: URL
+  let onSolarSystemZoom: (SolarSystemZoomCommand) -> Void
+
+  final class Coordinator: NSObject, WKScriptMessageHandler {
+    var onSolarSystemZoom: (SolarSystemZoomCommand) -> Void
+
+    init(onSolarSystemZoom: @escaping (SolarSystemZoomCommand) -> Void) {
+      self.onSolarSystemZoom = onSolarSystemZoom
+    }
+
+    func userContentController(
+      _ userContentController: WKUserContentController,
+      didReceive message: WKScriptMessage
+    ) {
+      guard message.name == "solarSystemZoom",
+            let body = message.body as? [String: Any] else { return }
+      if body["reset"] as? Bool == true {
+        onSolarSystemZoom(.reset)
+      } else if let delta = body["delta"] as? Double, delta.isFinite {
+        onSolarSystemZoom(.change(delta))
+      }
+    }
+  }
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator(onSolarSystemZoom: onSolarSystemZoom)
+  }
 
   func makeNSView(context: Context) -> ChartWebView {
     let configuration = WKWebViewConfiguration()
+    configuration.userContentController.add(context.coordinator, name: "solarSystemZoom")
     let webView = ChartWebView(frame: .zero, configuration: configuration)
     webView.setValue(false, forKey: "drawsBackground")
-    webView.allowsMagnification = true
+    webView.allowsMagnification = false
     return webView
   }
 
   func updateNSView(_ webView: ChartWebView, context: Context) {
+    context.coordinator.onSolarSystemZoom = onSolarSystemZoom
     webView.chartFileURL = fileURL
     if webView.url != fileURL {
       webView.loadFileURL(fileURL, allowingReadAccessTo: fileURL.deletingLastPathComponent())
     }
   }
+
+  static func dismantleNSView(_ webView: ChartWebView, coordinator: Coordinator) {
+    webView.configuration.userContentController.removeScriptMessageHandler(
+      forName: "solarSystemZoom")
+  }
 }
 
 struct ChartImageView: View {
   let chart: RenderedChart
+  let onSolarSystemZoom: (SolarSystemZoomCommand) -> Void
 
   var body: some View {
-    SVGPreview(fileURL: chart.svgURL)
+    SVGPreview(fileURL: chart.svgURL, onSolarSystemZoom: onSolarSystemZoom)
       .background(Color(nsColor: .windowBackgroundColor))
       .accessibilityLabel(
         "\(chart.request.style.rawValue) for \(chart.result.metadata.place.displayName), " +
@@ -775,7 +876,9 @@ struct ChartDetailView: View {
         if let chart = model.generatedChart {
           switch model.selectedResult {
           case .chart:
-            ChartImageView(chart: chart)
+            ChartImageView(chart: chart) { command in
+              model.queueSolarSystemZoom(command)
+            }
           case .positions:
             PositionsResultView(result: chart.result)
           case .aspects:

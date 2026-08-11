@@ -75,6 +75,10 @@ enum CanvasSize: String, CaseIterable, Identifiable {
 }
 
 struct ChartRequest {
+  static let defaultSolarSystemRadiusAU = 30.0
+  static let minimumSolarSystemRadiusAU = 0.0001
+  static let maximumSolarSystemRadiusAU = 360.0
+
   let requestedLocation: String
   let sourceMode: AstrologSourceMode
   let moment: AstrologMoment
@@ -82,6 +86,27 @@ struct ChartRequest {
   let style: ChartStyle
   let canvas: CanvasSize
   let lightBackground: Bool
+  let solarSystemRadiusAU: Double
+
+  init(
+    requestedLocation: String,
+    sourceMode: AstrologSourceMode,
+    moment: AstrologMoment,
+    place: AstrologPlace,
+    style: ChartStyle,
+    canvas: CanvasSize,
+    lightBackground: Bool,
+    solarSystemRadiusAU: Double = Self.defaultSolarSystemRadiusAU
+  ) {
+    self.requestedLocation = requestedLocation
+    self.sourceMode = sourceMode
+    self.moment = moment
+    self.place = place
+    self.style = style
+    self.canvas = canvas
+    self.lightBackground = lightBackground
+    self.solarSystemRadiusAU = solarSystemRadiusAU
+  }
 
   var chartArguments: [String] {
     astrologInputArguments(
@@ -99,8 +124,16 @@ struct ChartRequest {
   }
 
   var graphicEffectArguments: [String] {
-    guard style == .wheel else { return [] }
-    return ["-Xv", "1", "-YXk", "-YXk0"]
+    switch style {
+    case .wheel:
+      return ["-Xv", "1", "-YXk", "-YXk0"]
+    case .solarSystem:
+      let radius = String(
+        format: "%.6f", locale: Locale(identifier: "en_US_POSIX"), solarSystemRadiusAU)
+      return ["-YXS", radius]
+    case .aspects, .world:
+      return []
+    }
   }
 
   func withRenderingOptions(
@@ -115,7 +148,22 @@ struct ChartRequest {
       place: place,
       style: style,
       canvas: canvas,
-      lightBackground: lightBackground)
+      lightBackground: lightBackground,
+      solarSystemRadiusAU: solarSystemRadiusAU)
+  }
+
+  func withSolarSystemRadiusAU(_ radius: Double) -> ChartRequest {
+    ChartRequest(
+      requestedLocation: requestedLocation,
+      sourceMode: sourceMode,
+      moment: moment,
+      place: place,
+      style: style,
+      canvas: canvas,
+      lightBackground: lightBackground,
+      solarSystemRadiusAU: max(
+        Self.minimumSolarSystemRadiusAU,
+        min(Self.maximumSolarSystemRadiusAU, radius)))
   }
 }
 
