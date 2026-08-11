@@ -387,6 +387,63 @@ enum AstrologChartResultTests {
       expect(svg.contains("fill=\""), "close SVG omitted filled planet disks")
     }
 
+    test("Solar System SVG contains object distance tooltips") {
+      guard let result = newYorkReference else { throw TestError("missing New York reference") }
+      let place = result.metadata.place
+      let moment = result.metadata.moment
+      let radiusAU = 30.0
+      let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("AstrologSolarTooltipTests", isDirectory: true)
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      defer { try? FileManager.default.removeItem(at: directory) }
+      let svgURL = directory.appendingPathComponent("solar-system.svg")
+      let process = Process()
+      let errors = Pipe()
+      process.executableURL = engineURL
+      process.currentDirectoryURL = resourcesURL
+      process.arguments = astrologInputArguments(
+        moment: moment, place: place, chartName: "Solar tooltip reference") + [
+          "-S", "-YXS", "30", "-Xx0", "-Xw", "700", "560",
+          "-XV", "-Xo", svgURL.path,
+        ]
+      process.standardInput = FileHandle.nullDevice
+      process.standardOutput = FileHandle.nullDevice
+      process.standardError = errors
+      try process.run()
+      let errorData = errors.fileHandleForReading.readDataToEndOfFile()
+      process.waitUntilExit()
+      guard process.terminationStatus == 0 else {
+        throw TestError(
+          "Solar tooltip SVG exited with status \(process.terminationStatus): " +
+          String(decoding: errorData, as: UTF8.self))
+      }
+
+      let source = try String(contentsOf: svgURL, encoding: .utf8)
+      let targets = WheelTooltipAnnotator.solarSystemTooltipTargets(
+        in: source, result: result, radiusAU: radiusAU)
+      expect(targets.count >= 8,
+             "Solar System did not receive tooltips for the visible primary objects")
+      expect(targets.allSatisfy { $0.kind == "body" && $0.relationships.isEmpty },
+             "Solar System tooltips unexpectedly contain aspect relationships")
+      expect(targets.contains(where: { $0.key == "Sun" && $0.label == "Sun · 1.014 AU" }),
+             "Solar System is missing the Sun's AU distance")
+      expect(targets.allSatisfy { $0.label.hasSuffix(" AU") },
+             "a Solar System object tooltip is missing its AU distance")
+
+      let tooltipSVG = try WheelTooltipAnnotator.annotatedSolarSystemSVG(
+        source, result: result, radiusAU: radiusAU)
+      let interactiveSVG = try SolarSystemZoomAnnotator.annotatedSVG(tooltipSVG)
+      expect(interactiveSVG.contains("id=\"astrolog-as-tooltips\""),
+             "Solar System tooltip layer was not added")
+      expect(interactiveSVG.contains("id=\"astrolog-as-solar-zoom\""),
+             "Solar System tooltips displaced wheel zooming")
+      expect(interactiveSVG.contains("nearestDistance"),
+             "crowded Solar System targets do not select the nearest object")
+      expect(!source.contains("astrolog-as-tooltips"),
+             "Solar System annotations changed the clean engine SVG")
+    }
+
     test("Graphic sidebar uses a bounded place label") {
       let place = AstrologPlace(
         name: "New York City", regionCode: "ny", timeZoneIdentifier: "America/New_York",

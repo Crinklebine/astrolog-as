@@ -128,6 +128,11 @@ enum AstrologRenderer {
         result: calculation.result,
         lightBackground: request.lightBackground)
     } else if request.style == .solarSystem {
+      try WheelTooltipAnnotator.annotateSolarSystem(
+        svgAt: svgURL,
+        result: calculation.result,
+        radiusAU: request.solarSystemRadiusAU,
+        lightBackground: request.lightBackground)
       try SolarSystemZoomAnnotator.annotate(svgAt: svgURL)
     }
 

@@ -91,7 +91,22 @@ enum WheelTooltipAnnotator {
     };
     svg.addEventListener("pointerleave", hide);
     svg.addEventListener("pointermove", event => {
-      const target = event.target.closest?.(".astrolog-as-tooltip-target");
+      const point = svg.createSVGPoint();
+      point.x = event.clientX;
+      point.y = event.clientY;
+      const location = point.matrixTransform(svg.getScreenCTM().inverse());
+      let target = null;
+      let nearestDistance = Infinity;
+      svg.querySelectorAll(".astrolog-as-tooltip-target").forEach(candidate => {
+        const dx = location.x - Number(candidate.getAttribute("cx"));
+        const dy = location.y - Number(candidate.getAttribute("cy"));
+        const distance = Math.hypot(dx, dy);
+        const radius = Number(candidate.getAttribute("r"));
+        if (distance <= radius && distance < nearestDistance) {
+          target = candidate;
+          nearestDistance = distance;
+        }
+      });
       const label = target?.getAttribute("aria-label");
       if (!label) {
         hide();
@@ -123,10 +138,6 @@ enum WheelTooltipAnnotator {
       background.setAttribute("width", String(width));
       background.setAttribute("height", String(height));
 
-      const point = svg.createSVGPoint();
-      point.x = event.clientX;
-      point.y = event.clientY;
-      const location = point.matrixTransform(svg.getScreenCTM().inverse());
       let x = location.x + fontSize * 0.35;
       let y = location.y - height - fontSize * 0.25;
       if (x + width > viewBox.x + viewBox.width) x = viewBox.x + viewBox.width - width;
@@ -229,6 +240,120 @@ enum WheelTooltipAnnotator {
     var annotated = svg
     annotated.insert(contentsOf: markup, at: closingTag.lowerBound)
     return annotated
+  }
+
+  static func annotateSolarSystem(
+    svgAt url: URL,
+    result: ChartResult,
+    radiusAU: Double,
+    lightBackground: Bool = false
+  ) throws {
+    let svg = try String(contentsOf: url, encoding: .utf8)
+    let annotated = try annotatedSolarSystemSVG(
+      svg, result: result, radiusAU: radiusAU,
+      lightBackground: lightBackground)
+    try annotated.write(to: url, atomically: true, encoding: .utf8)
+  }
+
+  static func annotatedSolarSystemSVG(
+    _ svg: String,
+    result: ChartResult,
+    radiusAU: Double,
+    lightBackground: Bool = false
+  ) throws -> String {
+    if svg.contains("id=\"astrolog-as-tooltips\"") { return svg }
+    guard let viewBox = parseViewBox(svg),
+          let closingTag = svg.range(of: "</svg>", options: .backwards) else {
+      throw WheelTooltipError.invalidSVG
+    }
+    let targets = solarSystemTooltipTargets(
+      in: svg, result: result, radiusAU: radiusAU)
+    let markup = tooltipMarkup(
+      targets, aspects: [], viewBox: viewBox,
+      lightBackground: lightBackground)
+    var annotated = svg
+    annotated.insert(contentsOf: markup, at: closingTag.lowerBound)
+    return annotated
+  }
+
+  static func solarSystemTooltipTargets(
+    in svg: String,
+    result: ChartResult,
+    radiusAU: Double
+  ) -> [WheelTooltipTarget] {
+    guard radiusAU > 0, let viewBox = parseViewBox(svg) else { return [] }
+    let glyphScale = localHorizonGlyphScale(viewBox: viewBox)
+    let markerRadius = glyphScale / 2.0
+    var seenMarkerLocations = Set<String>()
+    let markers = localHorizonMarkers(in: svg).filter { marker in
+      guard abs(marker.radius - markerRadius) < 0.51 else { return false }
+      let key = "\(marker.x)|\(marker.y)"
+      return seenMarkerLocations.insert(key).inserted
+    }
+    guard !markers.isEmpty else { return [] }
+
+    let centerX = viewBox.minimumX + viewBox.width / 2.0
+    let centerY = viewBox.minimumY + viewBox.height / 2.0
+    let edge = glyphScale * 6.0
+    let horizontalScale = (viewBox.width / 2.0 - edge) / radiusAU
+    let verticalScale = (viewBox.height / 2.0 - edge) / radiusAU
+    let expectedBodies = result.bodies.enumerated().compactMap { index, body ->
+      (index: Int, body: ChartBody, x: Double, y: Double)? in
+      let longitude = body.position.longitude * .pi / 180.0
+      let latitude = body.latitude * .pi / 180.0
+      let planarDistance = body.distanceAU * cos(latitude)
+      let x = centerX - planarDistance * cos(longitude) * horizontalScale
+      let y = centerY + planarDistance * sin(longitude) * verticalScale
+      guard x >= viewBox.minimumX + edge, x <= viewBox.minimumX + viewBox.width - edge,
+            y >= viewBox.minimumY + edge, y <= viewBox.minimumY + viewBox.height - edge else {
+        return nil
+      }
+      return (index, body, x, y)
+    }
+
+    var candidates: [(distance: Double, marker: Int, body: Int)] = []
+    for markerIndex in markers.indices {
+      for bodyIndex in expectedBodies.indices {
+        let body = expectedBodies[bodyIndex]
+        candidates.append((
+          hypot(markers[markerIndex].x - body.x, markers[markerIndex].y - body.y),
+          markerIndex, bodyIndex))
+      }
+    }
+    candidates.sort { $0.distance < $1.distance }
+
+    var usedMarkers = Set<Int>()
+    var usedBodies = Set<Int>()
+    var matches: [(index: Int, body: ChartBody, marker: SVGMarker)] = []
+    let tolerance = max(32.0, glyphScale * 4.0)
+    for candidate in candidates where candidate.distance <= tolerance {
+      guard !usedMarkers.contains(candidate.marker),
+            !usedBodies.contains(candidate.body) else { continue }
+      usedMarkers.insert(candidate.marker)
+      usedBodies.insert(candidate.body)
+      let body = expectedBodies[candidate.body]
+      matches.append((body.index, body.body, markers[candidate.marker]))
+    }
+    matches.sort { $0.index < $1.index }
+
+    let centers = solarSystemGlyphCenters(
+      for: matches.map(\.marker), viewBox: viewBox, edge: edge)
+    let hitRadius = glyphScale * 4.0
+    return zip(matches, centers).compactMap { match, center in
+      guard center.x >= viewBox.minimumX + edge,
+            center.x <= viewBox.minimumX + viewBox.width - edge,
+            center.y >= viewBox.minimumY + edge,
+            center.y <= viewBox.minimumY + viewBox.height - edge else { return nil }
+      return WheelTooltipTarget(
+        kind: "body", key: match.body.key,
+        label: "\(match.body.name) · \(solarSystemDistanceText(match.body.distanceAU))",
+        relationships: [], x: center.x, y: center.y, radius: hitRadius)
+    }
+  }
+
+  private static func solarSystemDistanceText(_ distanceAU: Double) -> String {
+    let locale = Locale(identifier: "en_US_POSIX")
+    return String(format: "%.4g AU", locale: locale, distanceAU)
   }
 
   static func localHorizonTooltipTargets(
@@ -421,6 +546,34 @@ enum WheelTooltipAnnotator {
       centers.append((marker.x, y))
     }
     return Array(centers.reversed())
+  }
+
+  private static func solarSystemGlyphCenters(
+    for ascendingMarkers: [SVGMarker],
+    viewBox: SVGViewBox,
+    edge: Double
+  ) -> [(x: Double, y: Double)] {
+    let offset = localHorizonGlyphScale(viewBox: viewBox) * 7.0
+    let glyphDiameter = offset * 2.0
+    var centers: [(x: Double, y: Double)] = []
+    for marker in ascendingMarkers {
+      var belowDistance = Double.greatestFiniteMagnitude
+      var aboveDistance = Double.greatestFiniteMagnitude
+      let belowY = marker.y + offset
+      let aboveY = marker.y - offset
+      for center in centers {
+        belowDistance = min(
+          belowDistance, abs(marker.x - center.x) + abs(belowY - center.y))
+        aboveDistance = min(
+          aboveDistance, abs(marker.x - center.x) + abs(aboveY - center.y))
+      }
+      let crowded = belowDistance < glyphDiameter || aboveDistance < glyphDiameter
+      let tooCloseToBottom = belowY >= viewBox.minimumY + viewBox.height - edge
+      let y = (crowded && belowDistance < aboveDistance) || tooCloseToBottom
+        ? aboveY : belowY
+      centers.append((marker.x, y))
+    }
+    return centers
   }
 
   private static func relationshipLabels(
