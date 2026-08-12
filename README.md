@@ -8,9 +8,9 @@ engine that calculates and renders each chart.
 ## Download and install
 
 The current release is
-[Astrolog-AS 8.00 (build 800.24)](https://github.com/Crinklebine/astrolog-as/releases/tag/v8.00-as.24).
+[Astrolog-AS 8.00 (build 800.25)](https://github.com/Crinklebine/astrolog-as/releases/tag/v8.00-as.25).
 Download the
-[Apple Silicon DMG](https://github.com/Crinklebine/astrolog-as/releases/download/v8.00-as.24/Astrolog-AS-800.24-arm64.dmg).
+[Apple Silicon DMG](https://github.com/Crinklebine/astrolog-as/releases/download/v8.00-as.25/Astrolog-AS-800.25-arm64.dmg).
 
 Astrolog-AS requires an Apple Silicon Mac running macOS 14 Sonoma or later.
 
@@ -34,7 +34,8 @@ open it.
 - Right-click CSV copying from the Positions and Aspects views.
 - Forward and reverse chart animation with single stepping, adjustable time
   increments, and playback rates from 1 to 60 frames per second or unthrottled.
-  Chart, Positions, and Aspects remain synchronized to each animated frame.
+  The balanced default is 15 frames per second, and Chart, Positions, and
+  Aspects remain synchronized to each animated frame.
 - Automatic time-zone and daylight-saving handling for place searches.
 - Seattle as the initial location, with the last successful place remembered
   and one-click chart generation from suggested places.
