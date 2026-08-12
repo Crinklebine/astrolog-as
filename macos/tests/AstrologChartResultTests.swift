@@ -314,14 +314,17 @@ enum AstrologChartResultTests {
       expect(animated.solarSystemRadiusAU == original.solarSystemRadiusAU,
              "animation changed the Solar System radius")
       expect(ChartAnimationRate.allCases.map(\.rawValue) ==
-        ["1 fps", "2 fps", "5 fps", "10 fps", "30 fps", "60 fps", "Maximum"],
+        ["1 fps", "2 fps", "5 fps", "15 fps", "30 fps", "60 fps", "Maximum"],
         "animation frame-rate choices changed")
-      expect(ChartAnimationRate.thirty.rawValue == "30 fps",
+      expect(ChartAnimationRate.fifteen.rawValue == "15 fps",
              "the default animation rate is unavailable")
       expect(ChartAnimationRate.five.minimumFrameInterval == 0.2,
              "smooth animation no longer targets five frames per second")
-      expect(ChartAnimationRate.ten.minimumFrameInterval == 0.1,
-             "fast animation no longer targets ten frames per second")
+      near(
+        ChartAnimationRate.fifteen.minimumFrameInterval,
+        1.0 / 15.0,
+        tolerance: 0.000_000_001,
+        "default animation no longer targets fifteen frames per second")
       near(
         ChartAnimationRate.thirty.minimumFrameInterval,
         1.0 / 30.0,

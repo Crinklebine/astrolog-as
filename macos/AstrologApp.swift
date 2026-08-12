@@ -198,7 +198,7 @@ final class ChartViewModel: ObservableObject {
   @Published var isWorking = false
   @Published private(set) var isUpdatingAppearance = false
   @Published var animationStep = ChartAnimationStep.day
-  @Published var animationRate = ChartAnimationRate.thirty
+  @Published var animationRate = ChartAnimationRate.fifteen
   @Published private(set) var animationDirection: ChartAnimationDirection?
   @Published private(set) var isAnimationRendering = false
   @Published var statusText = "Ready"

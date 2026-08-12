@@ -127,7 +127,7 @@ enum ChartAnimationRate: String, CaseIterable, Identifiable {
   case one = "1 fps"
   case two = "2 fps"
   case five = "5 fps"
-  case ten = "10 fps"
+  case fifteen = "15 fps"
   case thirty = "30 fps"
   case sixty = "60 fps"
   case maximum = "Maximum"
@@ -139,7 +139,7 @@ enum ChartAnimationRate: String, CaseIterable, Identifiable {
     case .one: return 1
     case .two: return 0.5
     case .five: return 0.2
-    case .ten: return 0.1
+    case .fifteen: return 1.0 / 15.0
     case .thirty: return 1.0 / 30.0
     case .sixty: return 1.0 / 60.0
     case .maximum: return 0
