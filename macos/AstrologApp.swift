@@ -1587,7 +1587,7 @@ struct ContentView: View {
 @main
 struct AstrologASMacApp: App {
   var body: some Scene {
-    WindowGroup {
+    Window("Astrolog-AS", id: "main") {
       ContentView()
     }
     .defaultSize(width: 1240, height: 820)
