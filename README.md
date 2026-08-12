@@ -10,9 +10,9 @@ engine that calculates and renders each chart.
 ## Download and install
 
 The current release is
-[Astrolog-AS 8.00 (build 800.26)](https://github.com/Crinklebine/astrolog-as/releases/tag/v8.00-as.26).
+[Astrolog-AS 8.00 (build 800.27)](https://github.com/Crinklebine/astrolog-as/releases/tag/v8.00-as.27).
 Download the
-[Apple Silicon DMG](https://github.com/Crinklebine/astrolog-as/releases/download/v8.00-as.26/Astrolog-AS-800.26-arm64.dmg).
+[Apple Silicon DMG](https://github.com/Crinklebine/astrolog-as/releases/download/v8.00-as.27/Astrolog-AS-800.27-arm64.dmg).
 
 Astrolog-AS requires an Apple Silicon Mac running macOS 14 Sonoma or later.
 
@@ -27,6 +27,8 @@ open it.
 ## Features
 
 - Native macOS controls for place, date, time, chart style, and appearance.
+- A predictable single-window lifecycle: closing the main window quits the app,
+  and launching it always creates one usable window.
 - Wheel, Solar System, Local Horizon, Astrocartography, and Aspect Grid graphics.
 - Engine-scale mouse-wheel zooming in the Solar System view, with double-click
   reset and close-range filled planetary disks.
