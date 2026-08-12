@@ -805,11 +805,6 @@ final class ChartWebView: WKWebView {
     menu.addItem(copyItem)
     menu.addItem(.separator())
 
-    let backItem = NSMenuItem(title: "Back", action: #selector(navigateBack(_:)), keyEquivalent: "")
-    backItem.target = self
-    backItem.isEnabled = canGoBack
-    menu.addItem(backItem)
-
     let reloadItem = NSMenuItem(title: "Reload", action: #selector(reloadChart(_:)), keyEquivalent: "")
     reloadItem.target = self
     menu.addItem(reloadItem)
@@ -876,10 +871,6 @@ final class ChartWebView: WKWebView {
       });
     })();
     """)
-  }
-
-  @objc private func navigateBack(_ sender: Any?) {
-    goBack()
   }
 
   @objc private func reloadChart(_ sender: Any?) {
