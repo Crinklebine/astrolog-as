@@ -147,6 +147,10 @@ struct AstrologPlace: Equatable {
 
   var timeZone: TimeZone? { TimeZone(identifier: timeZoneIdentifier) }
 
+  var atlasIdentifier: String {
+    "\(name)|\(regionCode)|\(longitudeDegreesWest)|\(latitudeDegreesNorth)"
+  }
+
   var countryCode: String {
     if regionCode == regionCode.lowercased() {
       return AtlasResolver.canadianProvinceCodes.contains(regionCode.lowercased()) ? "CA" : "US"
@@ -218,11 +222,62 @@ enum AtlasResolver {
   ]
 
   static func resolve(_ query: String, atlasURL: URL) throws -> AstrologPlace {
-    guard let data = try? Data(contentsOf: atlasURL),
-          let contents = String(data: data, encoding: .utf8) else {
-      throw AtlasResolverError.unreadableAtlas
-    }
+    let contents = try atlasContents(at: atlasURL)
     return try resolve(query, atlasContents: contents)
+  }
+
+  static func places(at atlasURL: URL) throws -> [AstrologPlace] {
+    places(in: try atlasContents(at: atlasURL))
+  }
+
+  static func places(in atlasContents: String) -> [AstrologPlace] {
+    var currentTimeZone = ""
+    var places: [AstrologPlace] = []
+    places.reserveCapacity(34_000)
+    for rawLine in atlasContents.split(whereSeparator: \.isNewline) {
+      let line = String(rawLine)
+      if line.isEmpty || line.hasPrefix(";") || line.hasPrefix("@") || line.hasPrefix("-YY") {
+        continue
+      }
+      let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
+      guard fields.count >= 4,
+            let longitude = Double(fields[0]),
+            let latitude = Double(fields[1]) else { continue }
+      if fields.count >= 5, !fields[4].isEmpty { currentTimeZone = fields[4] }
+      guard !currentTimeZone.isEmpty else { continue }
+      places.append(AstrologPlace(
+        name: fields[3], regionCode: fields[2], timeZoneIdentifier: currentTimeZone,
+        longitudeDegreesWest: longitude, latitudeDegreesNorth: latitude))
+    }
+    return places
+  }
+
+  static func search(
+    _ query: String,
+    in places: [AstrologPlace],
+    limit: Int = 100
+  ) -> [AstrologPlace] {
+    let terms = query.split(separator: ",").map { normalize(String($0)) }.filter { !$0.isEmpty }
+    guard !terms.isEmpty, limit > 0 else { return [] }
+    var matches: [(score: Int, place: AstrologPlace)] = []
+    for place in places {
+      let name = normalize(place.name)
+      let displayName = normalize(place.displayName)
+      guard terms.allSatisfy({ displayName.contains($0) }) else { continue }
+      let first = terms[0]
+      var score = name == first ? 400 : (name.hasPrefix(first) ? 300 : 200)
+      score -= max(0, name.count - first.count)
+      for qualifier in terms.dropFirst() {
+        if qualifier == normalize(place.regionCode) { score += 80 }
+        else if countryCode(for: qualifier) == place.countryCode { score += 60 }
+        else { score += 20 }
+      }
+      matches.append((score, place))
+    }
+    return matches.sorted {
+      if $0.score != $1.score { return $0.score > $1.score }
+      return $0.place.displayName.localizedStandardCompare($1.place.displayName) == .orderedAscending
+    }.prefix(limit).map(\.place)
   }
 
   static func resolve(_ query: String, atlasContents: String) throws -> AstrologPlace {
@@ -276,6 +331,14 @@ enum AtlasResolver {
     guard let place = best?.place else { throw AtlasResolverError.placeNotFound(query) }
     guard place.timeZone != nil else { throw AtlasResolverError.invalidTimeZone(place.timeZoneIdentifier) }
     return place
+  }
+
+  private static func atlasContents(at atlasURL: URL) throws -> String {
+    guard let data = try? Data(contentsOf: atlasURL),
+          let contents = String(data: data, encoding: .utf8) else {
+      throw AtlasResolverError.unreadableAtlas
+    }
+    return contents
   }
 
   private static func countryCode(for normalizedName: String) -> String? {

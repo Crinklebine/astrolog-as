@@ -201,6 +201,8 @@ final class ChartViewModel: ObservableObject {
   @Published var animationRate = ChartAnimationRate.fifteen
   @Published private(set) var animationDirection: ChartAnimationDirection?
   @Published private(set) var isAnimationRendering = false
+  @Published private(set) var atlasPlaces: [AstrologPlace] = []
+  @Published private(set) var isLoadingPlaces = false
   @Published var statusText = "Ready"
   @Published var errorMessage: String?
 
@@ -239,15 +241,17 @@ final class ChartViewModel: ObservableObject {
     location = lastPlaceStore.location
   }
 
-  func request(for currentInstant: Date) throws -> ChartRequest {
+  func request(
+    for currentInstant: Date,
+    resolvedPlace: AstrologPlace? = nil
+  ) throws -> ChartRequest {
     let requestedLocation = location.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !requestedLocation.isEmpty else {
       throw AtlasResolverError.placeNotFound(requestedLocation)
     }
     guard let resources = Bundle.main.resourceURL else { throw AstrologAppError.missingEngine }
-    let place = try AtlasResolver.resolve(
-      requestedLocation,
-      atlasURL: resources.appendingPathComponent("atlas.as"))
+    let place = try resolvedPlace ?? AtlasResolver.resolve(
+      requestedLocation, atlasURL: resources.appendingPathComponent("atlas.as"))
     guard let selectedTimeZone = place.timeZone else {
       throw AtlasResolverError.invalidTimeZone(place.timeZoneIdentifier)
     }
@@ -284,7 +288,37 @@ final class ChartViewModel: ObservableObject {
     await generate(currentInstant: currentInstant, updatesInPlace: true)
   }
 
-  private func generate(currentInstant: Date, updatesInPlace: Bool) async {
+  func loadAtlasPlaces() async {
+    guard atlasPlaces.isEmpty, !isLoadingPlaces else { return }
+    guard let atlasURL = Bundle.main.resourceURL?.appendingPathComponent("atlas.as") else {
+      errorMessage = AstrologAppError.missingEngine.localizedDescription
+      return
+    }
+    isLoadingPlaces = true
+    defer { isLoadingPlaces = false }
+    do {
+      atlasPlaces = try await Task.detached(priority: .userInitiated) {
+        try AtlasResolver.places(at: atlasURL)
+      }.value
+    } catch {
+      errorMessage = error.localizedDescription
+    }
+  }
+
+  func selectAtlasPlace(_ place: AstrologPlace, currentInstant: Date = Date()) async {
+    guard !isInteractionLocked else { return }
+    location = place.displayName
+    await generate(
+      currentInstant: currentInstant,
+      updatesInPlace: true,
+      resolvedPlace: place)
+  }
+
+  private func generate(
+    currentInstant: Date,
+    updatesInPlace: Bool,
+    resolvedPlace: AstrologPlace? = nil
+  ) async {
     guard !isInteractionLocked else { return }
     guard !location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
       errorMessage = "Enter a city or place before generating the chart."
@@ -307,7 +341,7 @@ final class ChartViewModel: ObservableObject {
     errorMessage = nil
     statusText = updatesInPlace ? "Updating place…" : "Calculating chart…"
     do {
-      let request = try request(for: currentInstant)
+      let request = try request(for: currentInstant, resolvedPlace: resolvedPlace)
       let chart = try await Task.detached(priority: .userInitiated) {
         let calculation = try AstrologEngine.calculate(request)
         return try AstrologRenderer.render(calculation)
@@ -1140,8 +1174,85 @@ struct AspectsResultView: View {
   }
 }
 
+struct AtlasPlacePickerView: View {
+  @ObservedObject var model: ChartViewModel
+  @Environment(\.dismiss) private var dismiss
+  @State private var query = ""
+
+  private var matches: [AstrologPlace] {
+    AtlasResolver.search(query, in: model.atlasPlaces)
+  }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HStack {
+        VStack(alignment: .leading, spacing: 3) {
+          Text("Find a Place")
+            .font(.title2.weight(.semibold))
+          Text("Search the bundled Astrolog atlas by city, state, or country.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        Spacer()
+        Button("Close") { dismiss() }
+          .keyboardShortcut(.cancelAction)
+      }
+      .padding(20)
+
+      TextField("City, state, or country", text: $query)
+        .textFieldStyle(.roundedBorder)
+        .font(.title3)
+        .padding(.horizontal, 20)
+        .padding(.bottom, 14)
+
+      Divider()
+
+      Group {
+        if model.isLoadingPlaces {
+          ProgressView("Loading places…")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+          ContentUnavailableView(
+            "Search 33,000+ Places",
+            systemImage: "magnifyingglass",
+            description: Text("Start typing a city name, then add a state or country to narrow the results."))
+        } else if matches.isEmpty {
+          ContentUnavailableView.search(text: query)
+        } else {
+          List(matches, id: \.atlasIdentifier) { place in
+            Button {
+              dismiss()
+              Task { await model.selectAtlasPlace(place) }
+            } label: {
+              HStack(spacing: 12) {
+                Image(systemName: "mappin.and.ellipse")
+                  .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                  Text(place.displayName)
+                    .foregroundStyle(.primary)
+                  Text(place.timeZoneIdentifier)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                Spacer()
+              }
+              .contentShape(Rectangle())
+              .padding(.vertical, 3)
+            }
+            .buttonStyle(.plain)
+          }
+        }
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    .frame(width: 620, height: 520)
+    .task { await model.loadAtlasPlaces() }
+  }
+}
+
 struct SidebarView: View {
   @ObservedObject var model: ChartViewModel
+  @State private var isShowingPlaces = false
 
   var body: some View {
     Form {
@@ -1151,11 +1262,18 @@ struct SidebarView: View {
           .onSubmit { Task { await model.generate() } }
           .disabled(model.isBusy)
 
-        Menu("Suggested places") {
-          ForEach(model.suggestedPlaces, id: \.self) { place in
-            Button(place) {
-              Task { await model.selectSuggestedPlace(place) }
+        HStack {
+          Menu("Suggested places") {
+            ForEach(model.suggestedPlaces, id: \.self) { place in
+              Button(place) {
+                Task { await model.selectSuggestedPlace(place) }
+              }
             }
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+
+          Button("Places…") {
+            isShowingPlaces = true
           }
         }
         .disabled(model.isBusy)
@@ -1237,6 +1355,9 @@ struct SidebarView: View {
     .formStyle(.grouped)
     .frame(minWidth: 285, idealWidth: 310)
     .allowsHitTesting(!model.isAnimationRendering)
+    .sheet(isPresented: $isShowingPlaces) {
+      AtlasPlacePickerView(model: model)
+    }
   }
 
   private func generateAfterCommittingEdits() {

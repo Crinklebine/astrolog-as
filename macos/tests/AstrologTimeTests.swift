@@ -117,6 +117,19 @@ enum AstrologTimeTests {
       expect(place.timeZoneIdentifier == "Asia/Bangkok", "expected Bangkok timezone")
     }
 
+    test("Atlas place search ranks and qualifies matches") {
+      let places = try AtlasResolver.places(at: atlasURL())
+      expect(places.count == 33_702, "expected every bundled atlas place")
+      let seattle = AtlasResolver.search("Seattle", in: places, limit: 10)
+      expect(seattle.first?.displayName == "Seattle, WA, United States",
+             "city prefix search did not rank Seattle first")
+      let london = AtlasResolver.search("London, Canada", in: places, limit: 10)
+      expect(london.first?.regionCode == "on",
+             "country qualifier did not select London, Ontario")
+      expect(AtlasResolver.search("", in: places).isEmpty,
+             "empty atlas search unexpectedly returned every city")
+    }
+
     test("Astrolog receives local civil time, standard zone, and separate DST") {
       let place = try AtlasResolver.resolve("New York, NY, USA", atlasURL: atlasURL())
       let moment = try moment("2026-08-05T21:57:00Z", zone: place.timeZoneIdentifier)
