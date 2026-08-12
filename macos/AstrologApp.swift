@@ -1591,8 +1591,5 @@ struct AstrologASMacApp: App {
       ContentView()
     }
     .defaultSize(width: 1240, height: 820)
-    .commands {
-      CommandGroup(replacing: .newItem) { }
-    }
   }
 }
