@@ -5,6 +5,8 @@ Crinklebine for Walter D. Pullen's Astrolog 8.00 calculation and graphics
 engine. It provides a focused Mac experience while retaining Astrolog as the
 engine that calculates and renders each chart.
 
+![Astrolog-AS displaying a Wheel chart with native macOS controls](docs/images/astrolog-as-wheel.png)
+
 ## Download and install
 
 The current release is
