@@ -83,6 +83,7 @@ enum ChartAnimationDirection: Int {
 }
 
 enum ChartAnimationStep: String, CaseIterable, Identifiable {
+  case second = "1 second"
   case minute = "1 minute"
   case tenMinutes = "10 minutes"
   case hour = "1 hour"
@@ -96,6 +97,7 @@ enum ChartAnimationStep: String, CaseIterable, Identifiable {
 
   private var calendarIncrement: (component: Calendar.Component, value: Int) {
     switch self {
+    case .second: return (.second, 1)
     case .minute: return (.minute, 1)
     case .tenMinutes: return (.minute, 10)
     case .hour: return (.hour, 1)

@@ -285,6 +285,12 @@ enum AstrologChartResultTests {
       let timeZone = try requireZone(place.timeZoneIdentifier)
       let start = try parseISO("2026-03-07T17:00:00Z")
       let expectedNextDay = try parseISO("2026-03-08T16:00:00Z")
+      expect(ChartAnimationStep.allCases.map(\.rawValue).first == "1 second",
+             "one-second animation stepping is unavailable")
+      expect(
+        ChartAnimationStep.second.advancing(
+          start, direction: .forward, in: timeZone) == start.addingTimeInterval(1),
+        "one-second animation did not advance by exactly one second")
       guard let nextDay = ChartAnimationStep.day.advancing(
         start, direction: .forward, in: timeZone) else {
         throw TestError("could not advance an animation day")
