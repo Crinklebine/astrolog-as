@@ -33,6 +33,8 @@ struct LastPlaceStore {
 
 struct ChartAppearanceStore {
   private static let lightBackgroundKey = "lightChartBackground"
+  private static let chartStyleKey = "chartStyle"
+  private static let canvasSizeKey = "chartCanvasSize"
   private let defaults: UserDefaults
 
   init(defaults: UserDefaults = .standard) {
@@ -43,8 +45,24 @@ struct ChartAppearanceStore {
     defaults.object(forKey: Self.lightBackgroundKey) as? Bool ?? false
   }
 
+  var chartStyle: ChartStyle {
+    defaults.string(forKey: Self.chartStyleKey).flatMap(ChartStyle.init(rawValue:)) ?? .wheel
+  }
+
+  var canvasSize: CanvasSize {
+    defaults.string(forKey: Self.canvasSizeKey).flatMap(CanvasSize.init(rawValue:)) ?? .compact
+  }
+
   func saveLightBackground(_ enabled: Bool) {
     defaults.set(enabled, forKey: Self.lightBackgroundKey)
+  }
+
+  func saveChartStyle(_ style: ChartStyle) {
+    defaults.set(style.rawValue, forKey: Self.chartStyleKey)
+  }
+
+  func saveCanvasSize(_ size: CanvasSize) {
+    defaults.set(size.rawValue, forKey: Self.canvasSizeKey)
   }
 }
 

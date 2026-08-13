@@ -565,7 +565,7 @@ enum AstrologChartResultTests {
       expect(store.location == "London, England", "legacy app preference was not migrated")
     }
 
-    test("Chart background preference persists") {
+    test("Chart appearance preferences persist with safe defaults") {
       let suiteName = "AstrologChartResultTests.Appearance.\(UUID().uuidString)"
       guard let defaults = UserDefaults(suiteName: suiteName) else {
         throw TestError("could not create isolated appearance defaults")
@@ -574,12 +574,26 @@ enum AstrologChartResultTests {
 
       let store = ChartAppearanceStore(defaults: defaults)
       expect(!store.lightBackground, "first launch did not default to a dark chart")
+      expect(store.chartStyle == .wheel, "first launch did not default to the Wheel style")
+      expect(store.canvasSize == .compact, "first launch did not default to Compact detail")
       store.saveLightBackground(true)
+      store.saveChartStyle(.localHorizon)
+      store.saveCanvasSize(.large)
       expect(ChartAppearanceStore(defaults: defaults).lightBackground,
              "light chart background was not restored")
+      expect(ChartAppearanceStore(defaults: defaults).chartStyle == .localHorizon,
+             "chart style was not restored")
+      expect(ChartAppearanceStore(defaults: defaults).canvasSize == .large,
+             "chart detail was not restored")
       store.saveLightBackground(false)
       expect(!ChartAppearanceStore(defaults: defaults).lightBackground,
              "dark chart background was not restored")
+      defaults.set("Future Style", forKey: "chartStyle")
+      defaults.set("Future Detail", forKey: "chartCanvasSize")
+      expect(ChartAppearanceStore(defaults: defaults).chartStyle == .wheel,
+             "unknown chart style did not fall back safely")
+      expect(ChartAppearanceStore(defaults: defaults).canvasSize == .compact,
+             "unknown chart detail did not fall back safely")
     }
 
     test("Suggested places balance recency and frequency within eight slots") {

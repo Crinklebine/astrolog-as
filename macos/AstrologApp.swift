@@ -190,8 +190,8 @@ final class ChartViewModel: ObservableObject {
   @Published var useCurrentMoment = true
   @Published var chartDate = Date()
   @Published var displayTimeZone = TimeZone(identifier: "America/Los_Angeles") ?? .current
-  @Published var chartStyle = ChartStyle.wheel
-  @Published var canvasSize = CanvasSize.compact
+  @Published var chartStyle: ChartStyle
+  @Published var canvasSize: CanvasSize
   @Published var lightBackground: Bool
   @Published private(set) var suggestedPlaces: [String]
   @Published var selectedResult = ResultView.chart
@@ -237,6 +237,8 @@ final class ChartViewModel: ObservableObject {
     self.chartAppearanceStore = chartAppearanceStore
     self.suggestedPlacesStore = suggestedPlacesStore
     location = lastPlaceStore.location
+    chartStyle = chartAppearanceStore.chartStyle
+    canvasSize = chartAppearanceStore.canvasSize
     lightBackground = chartAppearanceStore.lightBackground
     suggestedPlaces = suggestedPlacesStore.places
   }
@@ -318,6 +320,14 @@ final class ChartViewModel: ObservableObject {
 
   func saveLightBackgroundPreference() {
     chartAppearanceStore.saveLightBackground(lightBackground)
+  }
+
+  func saveChartStylePreference() {
+    chartAppearanceStore.saveChartStyle(chartStyle)
+  }
+
+  func saveCanvasSizePreference() {
+    chartAppearanceStore.saveCanvasSize(canvasSize)
   }
 
   private func generate(
@@ -1306,6 +1316,7 @@ struct SidebarView: View {
         }
         .disabled(model.isBusy)
         .onChange(of: model.chartStyle) {
+          model.saveChartStylePreference()
           Task { await model.updateChartRendering() }
         }
         Picker("Detail", selection: $model.canvasSize) {
@@ -1315,6 +1326,7 @@ struct SidebarView: View {
         }
         .disabled(model.isBusy)
         .onChange(of: model.canvasSize) {
+          model.saveCanvasSizePreference()
           Task { await model.updateChartRendering() }
         }
         Toggle("Light background", isOn: $model.lightBackground)
