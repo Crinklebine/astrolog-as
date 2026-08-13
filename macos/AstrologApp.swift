@@ -1347,9 +1347,17 @@ struct SidebarView: View {
       }
 
       Section("About") {
-        Text("Astrolog-AS native macOS interface by Crinklebine. Astrolog 8.00 calculation engine by Walter D. Pullen.")
-          .font(.caption)
-          .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+          AboutAttribution(
+            component: "Astrolog-AS",
+            detail: "Native macOS interface by Crinklebine")
+          AboutAttribution(
+            component: "Astrolog 8.00",
+            detail: "Calculation and graphics engine by Walter D. Pullen")
+          AboutAttribution(
+            component: "Swiss Ephemeris 2.10.03",
+            detail: "Included for astronomical calculations")
+        }
       }
     }
     .formStyle(.grouped)
@@ -1365,6 +1373,22 @@ struct SidebarView: View {
     DispatchQueue.main.async {
       Task { await model.generate() }
     }
+  }
+}
+
+private struct AboutAttribution: View {
+  let component: String
+  let detail: String
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 1) {
+      Text(component)
+        .fontWeight(.semibold)
+      Text(detail)
+        .foregroundStyle(.tertiary)
+    }
+    .font(.caption)
+    .fixedSize(horizontal: false, vertical: true)
   }
 }
 

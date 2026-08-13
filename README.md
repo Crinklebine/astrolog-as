@@ -10,9 +10,9 @@ engine that calculates and renders each chart.
 ## Download and install
 
 The current release is
-[Astrolog-AS 8.00 (build 800.27)](https://github.com/Crinklebine/astrolog-as/releases/tag/v8.00-as.27).
+[Astrolog-AS 8.00 (build 800.28)](https://github.com/Crinklebine/astrolog-as/releases/tag/v8.00-as.28).
 Download the
-[Apple Silicon DMG](https://github.com/Crinklebine/astrolog-as/releases/download/v8.00-as.27/Astrolog-AS-800.27-arm64.dmg).
+[Apple Silicon DMG](https://github.com/Crinklebine/astrolog-as/releases/download/v8.00-as.28/Astrolog-AS-800.28-arm64.dmg).
 
 Astrolog-AS requires an Apple Silicon Mac running macOS 14 Sonoma or later.
 
@@ -159,5 +159,10 @@ GitHub release.
 Astrolog is copyright Walter D. Pullen. Astrolog and the Astrolog-AS interface
 contributions by Crinklebine are distributed under the GNU General Public
 License version 2 or, at your option, any later version
-([`GPL-2.0-or-later`](license.htm)). Third-party materials remain under their
-respective licenses.
+([`GPL-2.0-or-later`](license.htm)).
+
+Astrolog-AS and Astrolog include Swiss Ephemeris 2.10.03, a third-party
+component used for astronomical ephemeris calculations. Swiss Ephemeris is
+distributed under its own licensing terms, and Astrolog-AS does not claim
+authorship of it. Its copyright and license notices remain in the bundled
+Swiss Ephemeris source files. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -86,7 +86,7 @@ chmod 755 "$contents_path/MacOS/Astrolog-AS" "$resources_path/astrolog-cli"
 
 runtime_files=(
   astrolog.as atlas.as timezone.as astexo.csv earth.bmp sefstars.txt seorbel.txt
-  mazegame.as astrolog.htm changes.htm license.htm
+  mazegame.as astrolog.htm changes.htm license.htm THIRD_PARTY_NOTICES.md
 )
 for file in $runtime_files; do
   cp "$file" "$resources_path/$file"
