@@ -192,7 +192,8 @@ final class ChartViewModel: ObservableObject {
   @Published var displayTimeZone = TimeZone(identifier: "America/Los_Angeles") ?? .current
   @Published var chartStyle = ChartStyle.wheel
   @Published var canvasSize = CanvasSize.compact
-  @Published var lightBackground = false
+  @Published var lightBackground: Bool
+  @Published private(set) var suggestedPlaces: [String]
   @Published var selectedResult = ResultView.chart
   @Published var generatedChart: RenderedChart?
   @Published var isWorking = false
@@ -207,6 +208,8 @@ final class ChartViewModel: ObservableObject {
   @Published var errorMessage: String?
 
   private let lastPlaceStore: LastPlaceStore
+  private let chartAppearanceStore: ChartAppearanceStore
+  private let suggestedPlacesStore: SuggestedPlacesStore
   private var pendingSolarSystemZoomDelta = 0.0
   private var solarSystemZoomResetRequested = false
   private var solarSystemZoomTask: Task<Void, Never>?
@@ -225,20 +228,17 @@ final class ChartViewModel: ObservableObject {
   }
   var isInteractionLocked: Bool { isBusy || isAnimationRendering }
 
-  let suggestedPlaces = [
-    "Seattle, WA, USA",
-    "London, England",
-    "Douglas, Isle of Man",
-    "New York, NY, USA",
-    "Los Angeles, CA, USA",
-    "Sydney, Australia",
-    "Bangkok, Thailand",
-    "Tokyo, Japan",
-  ]
-
-  init(lastPlaceStore: LastPlaceStore = LastPlaceStore()) {
+  init(
+    lastPlaceStore: LastPlaceStore = LastPlaceStore(),
+    chartAppearanceStore: ChartAppearanceStore = ChartAppearanceStore(),
+    suggestedPlacesStore: SuggestedPlacesStore = SuggestedPlacesStore()
+  ) {
     self.lastPlaceStore = lastPlaceStore
+    self.chartAppearanceStore = chartAppearanceStore
+    self.suggestedPlacesStore = suggestedPlacesStore
     location = lastPlaceStore.location
+    lightBackground = chartAppearanceStore.lightBackground
+    suggestedPlaces = suggestedPlacesStore.places
   }
 
   func request(
@@ -284,6 +284,7 @@ final class ChartViewModel: ObservableObject {
 
   func selectSuggestedPlace(_ place: String, currentInstant: Date = Date()) async {
     guard !isInteractionLocked else { return }
+    suggestedPlaces = suggestedPlacesStore.recordUse(of: place)
     location = place
     await generate(currentInstant: currentInstant, updatesInPlace: true)
   }
@@ -308,10 +309,15 @@ final class ChartViewModel: ObservableObject {
   func selectAtlasPlace(_ place: AstrologPlace, currentInstant: Date = Date()) async {
     guard !isInteractionLocked else { return }
     location = place.displayName
+    suggestedPlaces = suggestedPlacesStore.recordUse(of: place.displayName)
     await generate(
       currentInstant: currentInstant,
       updatesInPlace: true,
       resolvedPlace: place)
+  }
+
+  func saveLightBackgroundPreference() {
+    chartAppearanceStore.saveLightBackground(lightBackground)
   }
 
   private func generate(
@@ -1314,6 +1320,7 @@ struct SidebarView: View {
         Toggle("Light background", isOn: $model.lightBackground)
           .disabled(model.isBusy)
           .onChange(of: model.lightBackground) {
+            model.saveLightBackgroundPreference()
             Task { await model.updateChartRendering() }
           }
       }

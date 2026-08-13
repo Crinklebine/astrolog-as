@@ -565,6 +565,49 @@ enum AstrologChartResultTests {
       expect(store.location == "London, England", "legacy app preference was not migrated")
     }
 
+    test("Chart background preference persists") {
+      let suiteName = "AstrologChartResultTests.Appearance.\(UUID().uuidString)"
+      guard let defaults = UserDefaults(suiteName: suiteName) else {
+        throw TestError("could not create isolated appearance defaults")
+      }
+      defer { defaults.removePersistentDomain(forName: suiteName) }
+
+      let store = ChartAppearanceStore(defaults: defaults)
+      expect(!store.lightBackground, "first launch did not default to a dark chart")
+      store.saveLightBackground(true)
+      expect(ChartAppearanceStore(defaults: defaults).lightBackground,
+             "light chart background was not restored")
+      store.saveLightBackground(false)
+      expect(!ChartAppearanceStore(defaults: defaults).lightBackground,
+             "dark chart background was not restored")
+    }
+
+    test("Suggested places balance recency and frequency within eight slots") {
+      let suiteName = "AstrologChartResultTests.Suggestions.\(UUID().uuidString)"
+      guard let defaults = UserDefaults(suiteName: suiteName) else {
+        throw TestError("could not create isolated suggestion defaults")
+      }
+      defer { defaults.removePersistentDomain(forName: suiteName) }
+
+      let store = SuggestedPlacesStore(defaults: defaults)
+      expect(store.places == SuggestedPlacesStore.defaultPlaces,
+             "first launch suggestions changed")
+      for place in SuggestedPlacesStore.defaultPlaces {
+        store.recordUse(of: place)
+      }
+      store.recordUse(of: "Seattle, WA, USA")
+      let withParis = store.recordUse(of: "Paris, France")
+      expect(withParis.count == SuggestedPlacesStore.maximumPlaces,
+             "suggestion list exceeded eight places")
+      expect(withParis.first == "Paris, France", "fresh atlas place was not promoted")
+      expect(withParis.contains("Seattle, WA, USA"), "frequently used Seattle was evicted")
+      expect(withParis.contains("Tokyo, Japan"), "recently used Tokyo was evicted")
+      expect(!withParis.contains("London, England"),
+             "oldest least-used place was not replaced")
+      expect(SuggestedPlacesStore(defaults: defaults).places == withParis,
+             "adaptive suggestions were not persisted")
+    }
+
     test("Malformed engine positions cannot create a partial ChartResult") {
       let place = AstrologPlace(
         name: "Seattle", regionCode: "wa", timeZoneIdentifier: "America/Los_Angeles",

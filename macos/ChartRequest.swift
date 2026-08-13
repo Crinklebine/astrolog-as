@@ -31,6 +31,139 @@ struct LastPlaceStore {
   }
 }
 
+struct ChartAppearanceStore {
+  private static let lightBackgroundKey = "lightChartBackground"
+  private let defaults: UserDefaults
+
+  init(defaults: UserDefaults = .standard) {
+    self.defaults = defaults
+  }
+
+  var lightBackground: Bool {
+    defaults.object(forKey: Self.lightBackgroundKey) as? Bool ?? false
+  }
+
+  func saveLightBackground(_ enabled: Bool) {
+    defaults.set(enabled, forKey: Self.lightBackgroundKey)
+  }
+}
+
+struct SuggestedPlacesStore {
+  static let maximumPlaces = 8
+  static let defaultPlaces = [
+    "Seattle, WA, USA",
+    "London, England",
+    "Douglas, Isle of Man",
+    "New York, NY, USA",
+    "Los Angeles, CA, USA",
+    "Sydney, Australia",
+    "Bangkok, Thailand",
+    "Tokyo, Japan",
+  ]
+
+  private struct PlaceRecord: Codable {
+    let location: String
+    var useCount: Int
+    var lastUsed: Int
+  }
+
+  private struct SavedState: Codable {
+    var records: [PlaceRecord]
+    var usageClock: Int
+  }
+
+  private static let stateKey = "adaptiveSuggestedPlaces"
+  private let defaults: UserDefaults
+
+  init(defaults: UserDefaults = .standard) {
+    self.defaults = defaults
+  }
+
+  var places: [String] {
+    orderedRecords(loadState().records).map(\.location)
+  }
+
+  @discardableResult
+  func recordUse(of location: String) -> [String] {
+    let location = location.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !location.isEmpty else { return places }
+
+    var state = loadState()
+    state.usageClock += 1
+    if let index = state.records.firstIndex(where: {
+      $0.location.caseInsensitiveCompare(location) == .orderedSame
+    }) {
+      state.records[index].useCount += 1
+      state.records[index].lastUsed = state.usageClock
+    } else {
+      if state.records.count >= Self.maximumPlaces,
+         let evictionIndex = evictionIndex(in: state.records) {
+        state.records.remove(at: evictionIndex)
+      }
+      state.records.append(PlaceRecord(
+        location: location, useCount: 1, lastUsed: state.usageClock))
+    }
+    save(state)
+    return orderedRecords(state.records).map(\.location)
+  }
+
+  private func loadState() -> SavedState {
+    if let data = defaults.data(forKey: Self.stateKey),
+       let saved = try? JSONDecoder().decode(SavedState.self, from: data),
+       !saved.records.isEmpty {
+      var seen = Set<String>()
+      let records = saved.records.filter {
+        seen.insert($0.location.lowercased()).inserted
+      }
+      return SavedState(
+        records: Array(records.prefix(Self.maximumPlaces)),
+        usageClock: max(saved.usageClock, records.map(\.lastUsed).max() ?? 0))
+    }
+    return SavedState(
+      records: Self.defaultPlaces.map {
+        PlaceRecord(location: $0, useCount: 0, lastUsed: 0)
+      },
+      usageClock: 0)
+  }
+
+  private func save(_ state: SavedState) {
+    guard let data = try? JSONEncoder().encode(state) else { return }
+    defaults.set(data, forKey: Self.stateKey)
+  }
+
+  private func orderedRecords(_ records: [PlaceRecord]) -> [PlaceRecord] {
+    records.enumerated().sorted { lhs, rhs in
+      if lhs.element.lastUsed != rhs.element.lastUsed {
+        return lhs.element.lastUsed > rhs.element.lastUsed
+      }
+      return lhs.offset < rhs.offset
+    }.map(\.element)
+  }
+
+  private func evictionIndex(in records: [PlaceRecord]) -> Int? {
+    let protected = Set(
+      records.enumerated()
+        .filter { $0.element.lastUsed > 0 }
+        .sorted { $0.element.lastUsed > $1.element.lastUsed }
+        .prefix(2)
+        .map(\.offset))
+    return records.enumerated()
+      .filter { !protected.contains($0.offset) }
+      .min { lhs, rhs in
+        let lhsNeverUsed = lhs.element.useCount == 0
+        let rhsNeverUsed = rhs.element.useCount == 0
+        if lhsNeverUsed != rhsNeverUsed { return lhsNeverUsed }
+        if lhs.element.useCount != rhs.element.useCount {
+          return lhs.element.useCount < rhs.element.useCount
+        }
+        if lhs.element.lastUsed != rhs.element.lastUsed {
+          return lhs.element.lastUsed < rhs.element.lastUsed
+        }
+        return lhs.offset < rhs.offset
+      }?.offset
+  }
+}
+
 enum ChartStyle: String, CaseIterable, Identifiable {
   case wheel = "Wheel"
   case solarSystem = "Solar System"
