@@ -10,9 +10,9 @@ engine that calculates and renders each chart.
 ## Download and install
 
 The current release is
-[Astrolog-AS 8.00 (build 800.28)](https://github.com/Crinklebine/astrolog-as/releases/tag/v8.00-as.28).
+[Astrolog-AS 8.00 (build 800.29)](https://github.com/Crinklebine/astrolog-as/releases/tag/v8.00-as.29).
 Download the
-[Apple Silicon DMG](https://github.com/Crinklebine/astrolog-as/releases/download/v8.00-as.28/Astrolog-AS-800.28-arm64.dmg).
+[Apple Silicon DMG](https://github.com/Crinklebine/astrolog-as/releases/download/v8.00-as.29/Astrolog-AS-800.29-arm64.dmg).
 
 Astrolog-AS requires an Apple Silicon Mac running macOS 14 Sonoma or later.
 
@@ -44,7 +44,8 @@ open it.
 - A searchable picker for all 33,702 locations in Astrolog's bundled atlas,
   with city, state or province, country, and timezone matching.
 - Seattle as the initial location, with the last successful place remembered
-  and one-click chart generation from suggested places.
+  and an adaptive eight-place suggestion list that balances recent and frequent
+  choices from the full atlas.
 - Scalable SVG charts with PNG and text-report export.
 - Hover tooltips for planets, angles, zodiac signs, and houses in the Wheel,
   with focused relationship highlighting for planets, the Moon, and North Node.
@@ -52,6 +53,7 @@ open it.
 - Object and geocentric AU-distance tooltips in the Solar System view.
 - Automatic chart rerendering when the style, detail, or background changes,
   without changing the displayed chart's moment.
+- Chart style, detail, and background choices remembered between launches.
 - Right-click chart copying and a dark chart background by default.
 - A self-contained app that does not require XQuartz.
 
