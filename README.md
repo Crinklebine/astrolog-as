@@ -38,7 +38,7 @@ open it.
 - Right-click CSV copying from the Positions and Aspects views.
 - Forward and reverse chart animation with single stepping, adjustable time
   increments, and playback rates from 1 to 60 frames per second or unthrottled.
-  The balanced default is 15 frames per second, and Chart, Positions, and
+  The default is 5 frames per second, and Chart, Positions, and
   Aspects remain synchronized to each animated frame.
 - Automatic time-zone and daylight-saving handling for place searches.
 - A searchable picker for all 33,702 locations in Astrolog's bundled atlas,

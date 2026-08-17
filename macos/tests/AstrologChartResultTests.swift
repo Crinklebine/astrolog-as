@@ -312,15 +312,15 @@ enum AstrologChartResultTests {
       expect(ChartAnimationRate.allCases.map(\.rawValue) ==
         ["1 fps", "2 fps", "5 fps", "15 fps", "30 fps", "60 fps", "Maximum"],
         "animation frame-rate choices changed")
-      expect(ChartAnimationRate.fifteen.rawValue == "15 fps",
-             "the default animation rate is unavailable")
+      expect(ChartAnimationRate.defaultRate == .five,
+             "the default animation rate is no longer five frames per second")
       expect(ChartAnimationRate.five.minimumFrameInterval == 0.2,
              "smooth animation no longer targets five frames per second")
       near(
         ChartAnimationRate.fifteen.minimumFrameInterval,
         1.0 / 15.0,
         tolerance: 0.000_000_001,
-        "default animation no longer targets fifteen frames per second")
+        "fifteen-frame animation interval changed")
       near(
         ChartAnimationRate.thirty.minimumFrameInterval,
         1.0 / 30.0,

@@ -285,6 +285,8 @@ enum ChartAnimationRate: String, CaseIterable, Identifiable {
   case sixty = "60 fps"
   case maximum = "Maximum"
 
+  static let defaultRate: Self = .five
+
   var id: String { rawValue }
 
   var minimumFrameInterval: TimeInterval {
