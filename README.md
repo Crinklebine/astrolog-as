@@ -10,9 +10,9 @@ engine that calculates and renders each chart.
 ## Download and install
 
 The current release is
-[Astrolog-AS 8.00 (build 800.31)](https://github.com/Crinklebine/astrolog-as/releases/tag/v8.00-as.31).
+[Astrolog-AS 8.00 (build 800.32)](https://github.com/Crinklebine/astrolog-as/releases/tag/v8.00-as.32).
 Download the
-[Apple Silicon DMG](https://github.com/Crinklebine/astrolog-as/releases/download/v8.00-as.31/Astrolog-AS-800.31-arm64.dmg).
+[Apple Silicon DMG](https://github.com/Crinklebine/astrolog-as/releases/download/v8.00-as.32/Astrolog-AS-800.32-arm64.dmg).
 
 Astrolog-AS requires an Apple Silicon Mac running macOS 14 Sonoma or later.
 
@@ -41,8 +41,9 @@ open it.
   The default is 5 frames per second, an actual frame-rate counter appears
   during playback, and Chart, Positions, and Aspects remain synchronized to
   each animated frame.
-- A real-time playback mode that resynchronizes with the system clock every ten
-  seconds and recovers naturally after sleep without accumulating timer drift.
+- A real-time playback mode aligned to the wall clock at `:00`, `:10`, `:20`,
+  `:30`, `:40`, and `:50`, with automatic recovery after sleep and no
+  accumulated timer drift.
 - Automatic time-zone and daylight-saving handling for place searches.
 - A searchable picker for all 33,702 locations in Astrolog's bundled atlas,
   with city, state or province, country, and timezone matching.
