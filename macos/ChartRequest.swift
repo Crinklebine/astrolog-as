@@ -414,9 +414,10 @@ struct CalculatedChart {
 }
 
 struct RenderedChart {
+  let id = UUID()
   let calculation: CalculatedChart
-  let svgURL: URL
-  let engineSVGURL: URL
+  let svg: String
+  let engineSVG: String
 
   var request: ChartRequest { calculation.request }
   var result: ChartResult { calculation.result }

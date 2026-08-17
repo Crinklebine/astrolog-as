@@ -32,12 +32,6 @@ enum SolarSystemZoomAnnotator {
   })();
   """#
 
-  static func annotate(svgAt url: URL) throws {
-    let svg = try String(contentsOf: url, encoding: .utf8)
-    let annotated = try annotatedSVG(svg)
-    try annotated.write(to: url, atomically: true, encoding: .utf8)
-  }
-
   static func annotatedSVG(_ svg: String) throws -> String {
     if svg.contains("id=\"astrolog-as-solar-zoom\"") { return svg }
     guard svg.contains("viewBox=\""),

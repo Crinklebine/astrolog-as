@@ -72,22 +72,17 @@ enum AstrologEngine {
       FileHandle.standardError.write(Data((diagnostic + "\n").utf8))
     }
 
-    let calculationDirectory = FileManager.default.temporaryDirectory
-      .appendingPathComponent("AstrologCalculation", isDirectory: true)
-      .appendingPathComponent(UUID().uuidString, isDirectory: true)
-    try FileManager.default.createDirectory(
-      at: calculationDirectory, withIntermediateDirectories: true)
-    let positionsURL = calculationDirectory.appendingPathComponent("positions.as")
-
     let engineOutput = try run(arguments: request.chartArguments + [
-      "-o0", positionsURL.path, "-v", "-a",
+      "-o0", "-", "-v", "-a",
     ])
-    guard let positions = try? String(contentsOf: positionsURL, encoding: .utf8) else {
+    guard let positionsStart = engineOutput.standardOutput.range(of: "@AP") else {
       throw AstrologAppError.missingOutput
     }
+    let report = String(engineOutput.standardOutput[..<positionsStart.lowerBound])
+    let positions = String(engineOutput.standardOutput[positionsStart.lowerBound...])
     let result = try ChartResultParser.parse(
       positions: positions,
-      report: engineOutput.standardOutput,
+      report: report,
       sourceMode: request.sourceMode,
       moment: request.moment,
       place: request.place)
@@ -98,48 +93,43 @@ enum AstrologEngine {
 enum AstrologRenderer {
   static func render(_ calculation: CalculatedChart) throws -> RenderedChart {
     let request = calculation.request
-    let previewDirectory = FileManager.default.temporaryDirectory
-      .appendingPathComponent("AstrologPreview", isDirectory: true)
-      .appendingPathComponent(UUID().uuidString, isDirectory: true)
-    try FileManager.default.createDirectory(at: previewDirectory, withIntermediateDirectories: true)
-    let engineSVGURL = previewDirectory.appendingPathComponent("astrolog.svg")
-    let svgURL = previewDirectory.appendingPathComponent("chart.svg")
     let size = request.canvas.dimensions
 
     var graphicArguments = request.renderArguments + request.style.engineArguments
       + request.graphicEffectArguments
     graphicArguments += ["-Xx0", "-Xw", String(size.0), String(size.1)]
     if request.lightBackground { graphicArguments.append("-Xr") }
-    graphicArguments += ["-XV", "-Xo", engineSVGURL.path]
-    _ = try AstrologEngine.run(arguments: graphicArguments)
+    graphicArguments += ["-XV", "-Xo", "-"]
+    let engineOutput = try AstrologEngine.run(arguments: graphicArguments)
 
-    guard FileManager.default.fileExists(atPath: engineSVGURL.path) else {
+    let engineSVG = engineOutput.standardOutput
+    guard engineSVG.contains("<svg"), engineSVG.contains("</svg>") else {
       throw AstrologAppError.missingOutput
     }
-    try FileManager.default.copyItem(at: engineSVGURL, to: svgURL)
+    var svg = engineSVG
     if request.style == .wheel {
-      try WheelTooltipAnnotator.annotate(
-        svgAt: svgURL,
+      svg = try WheelTooltipAnnotator.annotatedSVG(
+        svg,
         result: calculation.result,
         lightBackground: request.lightBackground)
     } else if request.style == .localHorizon {
-      try WheelTooltipAnnotator.annotateLocalHorizon(
-        svgAt: svgURL,
+      svg = try WheelTooltipAnnotator.annotatedLocalHorizonSVG(
+        svg,
         result: calculation.result,
         lightBackground: request.lightBackground)
     } else if request.style == .solarSystem {
-      try WheelTooltipAnnotator.annotateSolarSystem(
-        svgAt: svgURL,
+      svg = try WheelTooltipAnnotator.annotatedSolarSystemSVG(
+        svg,
         result: calculation.result,
         radiusAU: request.solarSystemRadiusAU,
         lightBackground: request.lightBackground)
-      try SolarSystemZoomAnnotator.annotate(svgAt: svgURL)
+      svg = try SolarSystemZoomAnnotator.annotatedSVG(svg)
     }
 
     return RenderedChart(
       calculation: calculation,
-      svgURL: svgURL,
-      engineSVGURL: engineSVGURL)
+      svg: svg,
+      engineSVG: engineSVG)
   }
 
   static func generatePNG(_ calculation: CalculatedChart, at outputURL: URL) throws {
@@ -643,9 +633,6 @@ final class ChartViewModel: ObservableObject {
       }
 
       guard revision == animationRevision, !Task.isCancelled else {
-        if animationFrameCache[animationCacheKey(for: request)] == nil {
-          discardRenderedChart(nextChart)
-        }
         return false
       }
 
@@ -694,26 +681,14 @@ final class ChartViewModel: ObservableObject {
     animationFrameCacheOrder.append(key)
     while animationFrameCacheOrder.count > 8 {
       let discardedKey = animationFrameCacheOrder.removeFirst()
-      guard let discarded = animationFrameCache.removeValue(forKey: discardedKey),
-            discarded.svgURL != generatedChart?.svgURL else { continue }
-      discardRenderedChart(discarded)
+      animationFrameCache.removeValue(forKey: discardedKey)
     }
   }
 
   private func clearAnimationFrameCache(keeping chart: RenderedChart? = nil) {
-    let keptURL = chart?.svgURL
-    for cached in animationFrameCache.values where cached.svgURL != keptURL {
-      discardRenderedChart(cached)
-    }
     animationFrameCache.removeAll()
     animationFrameCacheOrder.removeAll()
     if let chart { cacheAnimationFrame(chart) }
-  }
-
-  private func discardRenderedChart(_ chart: RenderedChart) {
-    let directory = chart.svgURL.deletingLastPathComponent()
-    guard directory.deletingLastPathComponent().lastPathComponent == "AstrologPreview" else { return }
-    try? FileManager.default.removeItem(at: directory)
   }
 
   private func resetAnimationState() {
@@ -729,7 +704,7 @@ final class ChartViewModel: ObservableObject {
     panel.allowedContentTypes = [.svg]
     guard panel.runModal() == .OK, let destination = panel.url else { return }
     do {
-      try replaceFile(at: destination, with: chart.svgURL)
+      try chart.svg.write(to: destination, atomically: true, encoding: .utf8)
       statusText = "SVG exported"
     } catch {
       errorMessage = error.localizedDescription
@@ -786,33 +761,35 @@ final class ChartViewModel: ObservableObject {
 }
 
 final class ChartWebView: WKWebView {
-  var chartFileURL: URL?
-  var clipboardSVGURL: URL?
-  private var renderedFileURL: URL?
+  var chartSVG: String?
+  var clipboardSVG: String?
+  private var renderedChartID: UUID?
   private var tooltipsEnabled = true
 
-  func displayChart(at fileURL: URL) {
-    chartFileURL = fileURL
-    guard renderedFileURL != fileURL else { return }
-    let hasRenderedChart = renderedFileURL != nil
-    renderedFileURL = fileURL
+  func displayChart(_ svg: String, id: UUID) {
+    chartSVG = svg
+    guard renderedChartID != id else { return }
+    let hasRenderedChart = renderedChartID != nil
+    renderedChartID = id
 
     guard hasRenderedChart,
-          let svg = try? String(contentsOf: fileURL, encoding: .utf8),
           let script = try? SVGDocumentUpdater.replacementJavaScript(for: svg) else {
-      loadChartFile(fileURL)
+      loadChartData(svg)
       return
     }
 
     evaluateJavaScript(script) { [weak self] _, error in
-      guard let self, error != nil, self.renderedFileURL == fileURL else { return }
-      self.loadChartFile(fileURL)
+      guard let self, error != nil, self.renderedChartID == id else { return }
+      self.loadChartData(svg)
     }
   }
 
-  private func loadChartFile(_ fileURL: URL) {
-    renderedFileURL = fileURL
-    loadFileURL(fileURL, allowingReadAccessTo: fileURL.deletingLastPathComponent())
+  private func loadChartData(_ svg: String) {
+    load(
+      Data(svg.utf8),
+      mimeType: "image/svg+xml",
+      characterEncodingName: "utf-8",
+      baseURL: Bundle.main.resourceURL ?? URL(fileURLWithPath: "/"))
   }
 
   func setTooltipsEnabled(_ enabled: Bool) {
@@ -863,11 +840,11 @@ final class ChartWebView: WKWebView {
   }
 
   @objc private func copyChart(_ sender: Any?) {
-    guard let clipboardSVGURL,
-          let svgData = try? Data(contentsOf: clipboardSVGURL) else {
+    guard let clipboardSVG else {
       NSSound.beep()
       return
     }
+    let svgData = Data(clipboardSVG.utf8)
     let pasteboard = NSPasteboard.general
     let svgType = NSPasteboard.PasteboardType("public.svg-image")
     pasteboard.clearContents()
@@ -924,8 +901,8 @@ final class ChartWebView: WKWebView {
   }
 
   @objc private func reloadChart(_ sender: Any?) {
-    if let chartFileURL {
-      loadChartFile(chartFileURL)
+    if let chartSVG {
+      loadChartData(chartSVG)
     } else {
       reload()
     }
@@ -938,8 +915,9 @@ enum SolarSystemZoomCommand {
 }
 
 struct SVGPreview: NSViewRepresentable {
-  let fileURL: URL
-  let clipboardSVGURL: URL
+  let chartID: UUID
+  let svg: String
+  let clipboardSVG: String
   let tooltipsEnabled: Bool
   let onSolarSystemZoom: (SolarSystemZoomCommand) -> Void
 
@@ -974,14 +952,14 @@ struct SVGPreview: NSViewRepresentable {
     let webView = ChartWebView(frame: .zero, configuration: configuration)
     webView.setValue(false, forKey: "drawsBackground")
     webView.allowsMagnification = false
-    webView.clipboardSVGURL = clipboardSVGURL
+    webView.clipboardSVG = clipboardSVG
     return webView
   }
 
   func updateNSView(_ webView: ChartWebView, context: Context) {
     context.coordinator.onSolarSystemZoom = onSolarSystemZoom
-    webView.clipboardSVGURL = clipboardSVGURL
-    webView.displayChart(at: fileURL)
+    webView.clipboardSVG = clipboardSVG
+    webView.displayChart(svg, id: chartID)
     webView.setTooltipsEnabled(tooltipsEnabled)
   }
 
@@ -998,8 +976,9 @@ struct ChartImageView: View {
 
   var body: some View {
     SVGPreview(
-      fileURL: chart.svgURL,
-      clipboardSVGURL: chart.engineSVGURL,
+      chartID: chart.id,
+      svg: chart.svg,
+      clipboardSVG: chart.engineSVG,
       tooltipsEnabled: tooltipsEnabled,
       onSolarSystemZoom: onSolarSystemZoom)
       .background(Color(nsColor: .windowBackgroundColor))

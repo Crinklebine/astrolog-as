@@ -183,17 +183,6 @@ enum WheelTooltipAnnotator {
     let y2: Double
   }
 
-  static func annotate(
-    svgAt url: URL,
-    result: ChartResult,
-    lightBackground: Bool = false
-  ) throws {
-    let svg = try String(contentsOf: url, encoding: .utf8)
-    let annotated = try annotatedSVG(
-      svg, result: result, lightBackground: lightBackground)
-    try annotated.write(to: url, atomically: true, encoding: .utf8)
-  }
-
   static func annotatedSVG(
     _ svg: String,
     result: ChartResult,
@@ -215,17 +204,6 @@ enum WheelTooltipAnnotator {
     return annotated
   }
 
-  static func annotateLocalHorizon(
-    svgAt url: URL,
-    result: ChartResult,
-    lightBackground: Bool = false
-  ) throws {
-    let svg = try String(contentsOf: url, encoding: .utf8)
-    let annotated = try annotatedLocalHorizonSVG(
-      svg, result: result, lightBackground: lightBackground)
-    try annotated.write(to: url, atomically: true, encoding: .utf8)
-  }
-
   static func annotatedLocalHorizonSVG(
     _ svg: String,
     result: ChartResult,
@@ -244,19 +222,6 @@ enum WheelTooltipAnnotator {
     var annotated = svg
     annotated.insert(contentsOf: markup, at: closingTag.lowerBound)
     return annotated
-  }
-
-  static func annotateSolarSystem(
-    svgAt url: URL,
-    result: ChartResult,
-    radiusAU: Double,
-    lightBackground: Bool = false
-  ) throws {
-    let svg = try String(contentsOf: url, encoding: .utf8)
-    let annotated = try annotatedSolarSystemSVG(
-      svg, result: result, radiusAU: radiusAU,
-      lightBackground: lightBackground)
-    try annotated.write(to: url, atomically: true, encoding: .utf8)
   }
 
   static func annotatedSolarSystemSVG(

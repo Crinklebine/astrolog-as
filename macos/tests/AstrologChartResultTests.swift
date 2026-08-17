@@ -148,19 +148,9 @@ enum AstrologChartResultTests {
       expect(hypot(moon.x - mercury.x, moon.y - mercury.y) > moon.radius + mercury.radius,
              "crowded Local Horizon glyph tooltips still overlap")
 
-      let temporaryDirectory = FileManager.default.temporaryDirectory
-        .appendingPathComponent("astrolog-horizon-tooltip-\(UUID().uuidString)", isDirectory: true)
-      try FileManager.default.createDirectory(
-        at: temporaryDirectory, withIntermediateDirectories: true)
-      defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
-      let engineSVG = temporaryDirectory.appendingPathComponent("astrolog.svg")
-      let displaySVG = temporaryDirectory.appendingPathComponent("chart.svg")
-      try source.write(to: engineSVG, atomically: true, encoding: .utf8)
-      try FileManager.default.copyItem(at: engineSVG, to: displaySVG)
-      try WheelTooltipAnnotator.annotateLocalHorizon(svgAt: displaySVG, result: result)
-
-      let cleanCopy = try String(contentsOf: engineSVG, encoding: .utf8)
-      let interactiveCopy = try String(contentsOf: displaySVG, encoding: .utf8)
+      let cleanCopy = source
+      let interactiveCopy = try WheelTooltipAnnotator.annotatedLocalHorizonSVG(
+        source, result: result)
       expect(cleanCopy == source,
              "Local Horizon annotations changed the clean engine SVG")
       expect(!cleanCopy.contains("astrolog-as-tooltips"),
@@ -421,40 +411,23 @@ enum AstrologChartResultTests {
              "Astrocartography no longer selects Astrolog's map view")
     }
 
-    test("Close Solar System SVG renders filled planet disks") {
+    test("Close Solar System SVG streams filled planet disks") {
       let place = AstrologPlace(
         name: "New York City", regionCode: "ny", timeZoneIdentifier: "America/New_York",
         longitudeDegreesWest: 74.006, latitudeDegreesNorth: 40.7143)
       let moment = try astrologMoment(
         for: parseISO("2026-08-05T21:57:00Z"),
         at: requireZone(place.timeZoneIdentifier))
-      let directory = FileManager.default.temporaryDirectory
-        .appendingPathComponent("AstrologSolarSystemTests", isDirectory: true)
-        .appendingPathComponent(UUID().uuidString, isDirectory: true)
-      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-      defer { try? FileManager.default.removeItem(at: directory) }
-      let svgURL = directory.appendingPathComponent("close-solar-system.svg")
-      let process = Process()
-      let errors = Pipe()
-      process.executableURL = engineURL
-      process.currentDirectoryURL = resourcesURL
-      process.arguments = astrologInputArguments(
+      let svg = try runEngine(
+        engineURL: engineURL, resourcesURL: resourcesURL,
+        arguments: astrologInputArguments(
         moment: moment, place: place, chartName: "Close Solar System") + [
           "-S", "-YXS", "1", "-Xx0", "-Xw", "700", "560",
-          "-XV", "-Xo", svgURL.path,
-        ]
-      process.standardInput = FileHandle.nullDevice
-      process.standardOutput = FileHandle.nullDevice
-      process.standardError = errors
-      try process.run()
-      let errorData = errors.fileHandleForReading.readDataToEndOfFile()
-      process.waitUntilExit()
-      guard process.terminationStatus == 0 else {
-        throw TestError(
-          "close SVG exited with status \(process.terminationStatus): " +
-          String(decoding: errorData, as: UTF8.self))
-      }
-      let svg = try String(contentsOf: svgURL, encoding: .utf8)
+          "-XV", "-Xo", "-",
+        ])
+      expect(svg.hasPrefix("<?xml version=\"1.0\""),
+             "streamed SVG is contaminated before its XML declaration")
+      expect(svg.hasSuffix("</svg>\n"), "streamed SVG is incomplete")
       expect(svg.contains("fill=\""), "close SVG omitted filled planet disks")
     }
 
@@ -463,34 +436,13 @@ enum AstrologChartResultTests {
       let place = result.metadata.place
       let moment = result.metadata.moment
       let radiusAU = 30.0
-      let directory = FileManager.default.temporaryDirectory
-        .appendingPathComponent("AstrologSolarTooltipTests", isDirectory: true)
-        .appendingPathComponent(UUID().uuidString, isDirectory: true)
-      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-      defer { try? FileManager.default.removeItem(at: directory) }
-      let svgURL = directory.appendingPathComponent("solar-system.svg")
-      let process = Process()
-      let errors = Pipe()
-      process.executableURL = engineURL
-      process.currentDirectoryURL = resourcesURL
-      process.arguments = astrologInputArguments(
+      let source = try runEngine(
+        engineURL: engineURL, resourcesURL: resourcesURL,
+        arguments: astrologInputArguments(
         moment: moment, place: place, chartName: "Solar tooltip reference") + [
           "-S", "-YXS", "30", "-Xx0", "-Xw", "700", "560",
-          "-XV", "-Xo", svgURL.path,
-        ]
-      process.standardInput = FileHandle.nullDevice
-      process.standardOutput = FileHandle.nullDevice
-      process.standardError = errors
-      try process.run()
-      let errorData = errors.fileHandleForReading.readDataToEndOfFile()
-      process.waitUntilExit()
-      guard process.terminationStatus == 0 else {
-        throw TestError(
-          "Solar tooltip SVG exited with status \(process.terminationStatus): " +
-          String(decoding: errorData, as: UTF8.self))
-      }
-
-      let source = try String(contentsOf: svgURL, encoding: .utf8)
+          "-XV", "-Xo", "-",
+        ])
       let targets = WheelTooltipAnnotator.solarSystemTooltipTargets(
         in: source, result: result, radiusAU: radiusAU)
       expect(targets.count >= 8,
@@ -656,36 +608,47 @@ enum AstrologChartResultTests {
     place: AstrologPlace,
     chartName: String
   ) throws -> ChartResult {
-    let directory = FileManager.default.temporaryDirectory
-      .appendingPathComponent("AstrologChartResultTests", isDirectory: true)
-      .appendingPathComponent(UUID().uuidString, isDirectory: true)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    let positionsURL = directory.appendingPathComponent("positions.as")
+    let output = try runEngine(
+      engineURL: engineURL, resourcesURL: resourcesURL,
+      arguments: astrologInputArguments(
+        moment: moment, place: place, chartName: chartName) + [
+          "-o0", "-", "-v", "-a",
+        ])
+    guard let positionsStart = output.range(of: "@AP") else {
+      throw TestError("streamed positions marker is missing")
+    }
+    let report = String(output[..<positionsStart.lowerBound])
+    let positions = String(output[positionsStart.lowerBound...])
+    return try ChartResultParser.parse(
+      positions: positions,
+      report: report,
+      sourceMode: .manual,
+      moment: moment,
+      place: place)
+  }
+
+  private static func runEngine(
+    engineURL: URL,
+    resourcesURL: URL,
+    arguments: [String]
+  ) throws -> String {
     let process = Process()
     let output = Pipe()
     let errors = Pipe()
     process.executableURL = engineURL
     process.currentDirectoryURL = resourcesURL
-    process.arguments = astrologInputArguments(moment: moment, place: place, chartName: chartName) + [
-      "-o0", positionsURL.path, "-v", "-a",
-    ]
+    process.arguments = arguments
     process.standardInput = FileHandle.nullDevice
     process.standardOutput = output
     process.standardError = errors
     try process.run()
-    let reportData = output.fileHandleForReading.readDataToEndOfFile()
+    let outputData = output.fileHandleForReading.readDataToEndOfFile()
     let errorData = errors.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
     guard process.terminationStatus == 0 else {
       throw TestError(String(decoding: errorData, as: UTF8.self))
     }
-    let positions = try String(contentsOf: positionsURL, encoding: .utf8)
-    return try ChartResultParser.parse(
-      positions: positions,
-      report: String(decoding: reportData, as: UTF8.self),
-      sourceMode: .manual,
-      moment: moment,
-      place: place)
+    return String(decoding: outputData, as: UTF8.self)
   }
 
   private static func test(_ name: String, _ body: () throws -> Void) {
