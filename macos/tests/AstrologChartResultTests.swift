@@ -310,8 +310,25 @@ enum AstrologChartResultTests {
       expect(animated.solarSystemRadiusAU == original.solarSystemRadiusAU,
              "animation changed the Solar System radius")
       expect(ChartAnimationRate.allCases.map(\.rawValue) ==
-        ["1 fps", "2 fps", "5 fps", "15 fps", "30 fps", "60 fps", "Maximum"],
+        ["Real-time", "1 fps", "2 fps", "5 fps", "15 fps", "30 fps", "60 fps", "Maximum"],
         "animation frame-rate choices changed")
+      expect(!ChartAnimationRate.realTime.supportsTimelineStepping,
+             "real-time animation unexpectedly allows timeline stepping")
+      expect(ChartAnimationRate.one.supportsTimelineStepping,
+             "ordinary animation no longer allows timeline stepping")
+      expect(ChartAnimationRate.realTime.minimumFrameInterval == 10,
+             "real-time animation does not refresh every ten seconds")
+      let sampledNow = try parseISO("2026-03-07T17:00:07Z")
+      expect(
+        ChartAnimationRate.realTime.nextInstant(
+          after: start, step: .day, direction: .backward,
+          in: timeZone, currentInstant: sampledNow) == sampledNow,
+        "real-time animation did not use the sampled system time")
+      expect(
+        ChartAnimationRate.five.nextInstant(
+          after: start, step: .second, direction: .forward,
+          in: timeZone, currentInstant: sampledNow) == start.addingTimeInterval(1),
+        "ordinary animation unexpectedly used the sampled system time")
       expect(ChartAnimationRate.defaultRate == .five,
              "the default animation rate is no longer five frames per second")
       expect(ChartAnimationRate.five.minimumFrameInterval == 0.2,

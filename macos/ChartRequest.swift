@@ -277,6 +277,7 @@ enum ChartAnimationStep: String, CaseIterable, Identifiable {
 }
 
 enum ChartAnimationRate: String, CaseIterable, Identifiable {
+  case realTime = "Real-time"
   case one = "1 fps"
   case two = "2 fps"
   case five = "5 fps"
@@ -289,8 +290,11 @@ enum ChartAnimationRate: String, CaseIterable, Identifiable {
 
   var id: String { rawValue }
 
+  var supportsTimelineStepping: Bool { self != .realTime }
+
   var minimumFrameInterval: TimeInterval {
     switch self {
+    case .realTime: return 10
     case .one: return 1
     case .two: return 0.5
     case .five: return 0.2
@@ -299,6 +303,17 @@ enum ChartAnimationRate: String, CaseIterable, Identifiable {
     case .sixty: return 1.0 / 60.0
     case .maximum: return 0
     }
+  }
+
+  func nextInstant(
+    after displayedInstant: Date,
+    step: ChartAnimationStep,
+    direction: ChartAnimationDirection,
+    in timeZone: TimeZone,
+    currentInstant: Date
+  ) -> Date? {
+    if self == .realTime { return currentInstant }
+    return step.advancing(displayedInstant, direction: direction, in: timeZone)
   }
 }
 

@@ -541,11 +541,20 @@ final class ChartViewModel: ObservableObject {
   }
 
   func toggleAnimation(_ direction: ChartAnimationDirection) {
+    guard animationRate.supportsTimelineStepping || direction == .forward else { return }
     if animationDirection == direction {
       pauseAnimation()
       return
     }
     startAnimation(direction)
+  }
+
+  func animationRateDidChange() {
+    guard let direction = animationDirection else { return }
+    let updatedDirection: ChartAnimationDirection =
+      animationRate == .realTime ? .forward : direction
+    pauseAnimation(updateStatus: false)
+    startAnimation(updatedDirection)
   }
 
   func pauseAnimation(updateStatus: Bool = true) {
@@ -561,6 +570,7 @@ final class ChartViewModel: ObservableObject {
 
   func recordPresentedAnimationFrame(_ frameID: UUID) {
     guard isAnimating,
+          animationRate != .realTime,
           generatedChart?.id == frameID,
           lastPresentedAnimationFrameID != frameID else { return }
     lastPresentedAnimationFrameID = frameID
@@ -572,7 +582,7 @@ final class ChartViewModel: ObservableObject {
 
   func stepAnimation(_ direction: ChartAnimationDirection) async {
     guard generatedChart != nil, !isWorking, !isUpdatingAppearance,
-          !isAnimationRendering else { return }
+          !isAnimationRendering, animationRate.supportsTimelineStepping else { return }
     pauseAnimation(updateStatus: false)
     animationRevision += 1
     let revision = animationRevision
@@ -581,16 +591,22 @@ final class ChartViewModel: ObservableObject {
 
   private func startAnimation(_ direction: ChartAnimationDirection) {
     guard let chart = generatedChart, !isWorking, !isUpdatingAppearance,
-          !isAnimationRendering else { return }
+          !isAnimationRendering,
+          animationRate.supportsTimelineStepping || direction == .forward else { return }
     pauseAnimation(updateStatus: false)
-    useCurrentMoment = false
+    useCurrentMoment = animationRate == .realTime
     chartDate = chart.request.moment.instant
     cacheAnimationFrame(chart)
     animationFrameRateMeter.reset()
     lastPresentedAnimationFrameID = nil
     measuredAnimationFPS = nil
     animationDirection = direction
-    statusText = direction == .forward ? "Starting forward animation…" : "Starting reverse animation…"
+    if animationRate == .realTime {
+      statusText = "Starting real-time updates…"
+    } else {
+      statusText = direction == .forward ?
+        "Starting forward animation…" : "Starting reverse animation…"
+    }
     animationRevision += 1
     let revision = animationRevision
     animationTask = Task { [weak self] in
@@ -604,7 +620,10 @@ final class ChartViewModel: ObservableObject {
   ) async {
     while !Task.isCancelled, revision == animationRevision {
       let frameStarted = Date()
-      guard await renderAnimationFrame(direction: direction, revision: revision) else { break }
+      guard await renderAnimationFrame(
+        direction: direction,
+        revision: revision,
+        currentInstant: frameStarted) else { break }
       let remainingDelay = animationRate.minimumFrameInterval
         - Date().timeIntervalSince(frameStarted)
       if remainingDelay > 0 {
@@ -624,12 +643,17 @@ final class ChartViewModel: ObservableObject {
 
   private func renderAnimationFrame(
     direction: ChartAnimationDirection,
-    revision: Int
+    revision: Int,
+    currentInstant: Date = Date()
   ) async -> Bool {
     guard let chart = generatedChart,
           let timeZone = chart.request.place.timeZone,
-          let nextInstant = animationStep.advancing(
-            chart.request.moment.instant, direction: direction, in: timeZone) else {
+          let nextInstant = animationRate.nextInstant(
+            after: chart.request.moment.instant,
+            step: animationStep,
+            direction: direction,
+            in: timeZone,
+            currentInstant: currentInstant) else {
       errorMessage = "The next animation time could not be calculated."
       statusText = "Animation stopped"
       return false
@@ -637,7 +661,9 @@ final class ChartViewModel: ObservableObject {
 
     do {
       let nextMoment = try astrologMoment(for: nextInstant, at: timeZone)
-      let request = chart.request.withMoment(nextMoment)
+      let request = chart.request.withMoment(
+        nextMoment,
+        sourceMode: animationRate == .realTime ? .currentMoment : .manual)
       let nextChart: RenderedChart
       if let cached = animationFrameCache[animationCacheKey(for: request)] {
         nextChart = cached
@@ -654,7 +680,7 @@ final class ChartViewModel: ObservableObject {
       }
 
       generatedChart = nextChart
-      useCurrentMoment = false
+      useCurrentMoment = request.sourceMode == .currentMoment
       displayTimeZone = timeZone
       chartDate = nextMoment.instant
       clearSolarSystemChartCache()
@@ -665,6 +691,8 @@ final class ChartViewModel: ObservableObject {
       if animationDirection == nil {
         let directionText = direction == .forward ? "forward" : "backward"
         statusText = "Stepped \(directionText) · \(animationStep.rawValue)"
+      } else if animationRate == .realTime {
+        statusText = "Real-time · updated just now"
       } else {
         let directionText = direction == .forward ? "Forward" : "Reverse"
         statusText = "\(directionText) · \(animationStep.rawValue) · \(animationRate.rawValue)"
@@ -1451,7 +1479,7 @@ struct AnimationControlsView: View {
             .labelStyle(.iconOnly)
         }
         .help("Move backward by \(model.animationStep.rawValue)")
-        .disabled(model.isAnimating)
+        .disabled(model.isAnimating || !model.animationRate.supportsTimelineStepping)
         .allowsHitTesting(!model.isAnimationRendering)
 
         Button {
@@ -1461,6 +1489,7 @@ struct AnimationControlsView: View {
             .labelStyle(.iconOnly)
         }
         .help(model.animationDirection == .backward ? "Pause" : "Play backward")
+        .disabled(!model.animationRate.supportsTimelineStepping)
         .foregroundStyle(
           model.animationDirection == .backward ? Color.accentColor : Color.primary)
 
@@ -1490,7 +1519,7 @@ struct AnimationControlsView: View {
             .labelStyle(.iconOnly)
         }
         .help("Move forward by \(model.animationStep.rawValue)")
-        .disabled(model.isAnimating)
+        .disabled(model.isAnimating || !model.animationRate.supportsTimelineStepping)
         .allowsHitTesting(!model.isAnimationRendering)
       }
       .buttonStyle(.bordered)
@@ -1506,6 +1535,7 @@ struct AnimationControlsView: View {
       }
       .pickerStyle(.menu)
       .frame(width: 155)
+      .disabled(!model.animationRate.supportsTimelineStepping)
 
       Picker("Speed", selection: $model.animationRate) {
         ForEach(ChartAnimationRate.allCases) { rate in
@@ -1514,6 +1544,9 @@ struct AnimationControlsView: View {
       }
       .pickerStyle(.menu)
       .frame(width: 135)
+      .onChange(of: model.animationRate) {
+        model.animationRateDidChange()
+      }
 
       ProgressView()
         .controlSize(.small)
@@ -1522,16 +1555,21 @@ struct AnimationControlsView: View {
         .accessibilityHidden(!model.isAnimationRendering)
         .help("Rendering the next animation frame")
 
-      Text(model.measuredAnimationFPS.map {
-        String(format: "%.0f fps", locale: Locale(identifier: "en_US_POSIX"), $0)
-      } ?? "— fps")
+      Text(model.animationRate == .realTime ? "Every 10 s" :
+        model.measuredAnimationFPS.map {
+          String(format: "%.0f fps", locale: Locale(identifier: "en_US_POSIX"), $0)
+        } ?? "— fps")
         .font(.caption.monospacedDigit())
         .foregroundStyle(.secondary)
-        .frame(width: 50, alignment: .trailing)
+        .frame(width: 65, alignment: .trailing)
         .opacity(model.isAnimating ? 1 : 0)
-        .help("Frames actually presented, averaged over the last second")
+        .help(model.animationRate == .realTime ?
+          "Refreshes from the system clock every ten seconds" :
+          "Frames actually presented, averaged over the last second")
         .accessibilityHidden(!model.isAnimating)
         .accessibilityLabel(
+          model.animationRate == .realTime ?
+            "Real-time chart refreshes every ten seconds" :
           model.measuredAnimationFPS.map {
             String(format: "Actual animation rate %.1f frames per second", $0)
           } ?? "Actual animation rate not measured")
