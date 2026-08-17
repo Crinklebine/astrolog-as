@@ -300,6 +300,35 @@ enum ChartAnimationRate: String, CaseIterable, Identifiable {
   }
 }
 
+struct AnimationFrameRateMeter {
+  private var startedAt: TimeInterval?
+  private var presentationTimes: [TimeInterval] = []
+
+  mutating func reset() {
+    startedAt = nil
+    presentationTimes.removeAll(keepingCapacity: true)
+  }
+
+  mutating func recordPresentation(at time: TimeInterval) -> Double? {
+    guard time.isFinite else { return nil }
+    if let last = presentationTimes.last, time <= last { return nil }
+    if startedAt == nil { startedAt = time }
+    presentationTimes.append(time)
+
+    let cutoff = time - 1.0
+    while presentationTimes.count > 2, presentationTimes[1] < cutoff {
+      presentationTimes.removeFirst()
+    }
+
+    guard let startedAt, time - startedAt >= 1.0,
+          let first = presentationTimes.first,
+          let last = presentationTimes.last,
+          presentationTimes.count >= 2,
+          last > first else { return nil }
+    return Double(presentationTimes.count - 1) / (last - first)
+  }
+}
+
 struct ChartRequest {
   static let defaultSolarSystemRadiusAU = 30.0
   static let minimumSolarSystemRadiusAU = 0.0001

@@ -192,6 +192,7 @@ final class ChartViewModel: ObservableObject {
   @Published var animationRate = ChartAnimationRate.fifteen
   @Published private(set) var animationDirection: ChartAnimationDirection?
   @Published private(set) var isAnimationRendering = false
+  @Published private(set) var measuredAnimationFPS: Double?
   @Published private(set) var atlasPlaces: [AstrologPlace] = []
   @Published private(set) var isLoadingPlaces = false
   @Published var statusText = "Ready"
@@ -211,6 +212,8 @@ final class ChartViewModel: ObservableObject {
   private var animationRevision = 0
   private var animationFrameCache: [String: RenderedChart] = [:]
   private var animationFrameCacheOrder: [String] = []
+  private var animationFrameRateMeter = AnimationFrameRateMeter()
+  private var lastPresentedAnimationFrameID: UUID?
 
   var isAnimating: Bool { animationDirection != nil }
   var isBusy: Bool {
@@ -556,6 +559,17 @@ final class ChartViewModel: ObservableObject {
     }
   }
 
+  func recordPresentedAnimationFrame(_ frameID: UUID) {
+    guard isAnimating,
+          generatedChart?.id == frameID,
+          lastPresentedAnimationFrameID != frameID else { return }
+    lastPresentedAnimationFrameID = frameID
+    if let framesPerSecond = animationFrameRateMeter.recordPresentation(
+      at: ProcessInfo.processInfo.systemUptime) {
+      measuredAnimationFPS = framesPerSecond
+    }
+  }
+
   func stepAnimation(_ direction: ChartAnimationDirection) async {
     guard generatedChart != nil, !isWorking, !isUpdatingAppearance,
           !isAnimationRendering else { return }
@@ -572,6 +586,9 @@ final class ChartViewModel: ObservableObject {
     useCurrentMoment = false
     chartDate = chart.request.moment.instant
     cacheAnimationFrame(chart)
+    animationFrameRateMeter.reset()
+    lastPresentedAnimationFrameID = nil
+    measuredAnimationFPS = nil
     animationDirection = direction
     statusText = direction == .forward ? "Starting forward animation…" : "Starting reverse animation…"
     animationRevision += 1
@@ -760,9 +777,10 @@ final class ChartViewModel: ObservableObject {
   }
 }
 
-final class ChartWebView: WKWebView {
+final class ChartWebView: WKWebView, WKNavigationDelegate {
   var chartSVG: String?
   var clipboardSVG: String?
+  var onFramePresented: ((UUID) -> Void)?
   private var renderedChartID: UUID?
   private var tooltipsEnabled = true
 
@@ -773,23 +791,30 @@ final class ChartWebView: WKWebView {
     renderedChartID = id
 
     guard hasRenderedChart,
-          let script = try? SVGDocumentUpdater.replacementJavaScript(for: svg) else {
-      loadChartData(svg)
+          let script = try? SVGDocumentUpdater.replacementJavaScript(
+            for: svg, frameID: id) else {
+      loadChartData(svg, id: id)
       return
     }
 
     evaluateJavaScript(script) { [weak self] _, error in
       guard let self, error != nil, self.renderedChartID == id else { return }
-      self.loadChartData(svg)
+      self.loadChartData(svg, id: id)
     }
   }
 
-  private func loadChartData(_ svg: String) {
+  private func loadChartData(_ svg: String, id: UUID) {
+    renderedChartID = id
     load(
       Data(svg.utf8),
       mimeType: "image/svg+xml",
       characterEncodingName: "utf-8",
       baseURL: Bundle.main.resourceURL ?? URL(fileURLWithPath: "/"))
+  }
+
+  func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
+    guard let renderedChartID else { return }
+    onFramePresented?(renderedChartID)
   }
 
   func setTooltipsEnabled(_ enabled: Bool) {
@@ -901,8 +926,8 @@ final class ChartWebView: WKWebView {
   }
 
   @objc private func reloadChart(_ sender: Any?) {
-    if let chartSVG {
-      loadChartData(chartSVG)
+    if let chartSVG, let renderedChartID {
+      loadChartData(chartSVG, id: renderedChartID)
     } else {
       reload()
     }
@@ -920,18 +945,30 @@ struct SVGPreview: NSViewRepresentable {
   let clipboardSVG: String
   let tooltipsEnabled: Bool
   let onSolarSystemZoom: (SolarSystemZoomCommand) -> Void
+  let onFramePresented: (UUID) -> Void
 
   final class Coordinator: NSObject, WKScriptMessageHandler {
     var onSolarSystemZoom: (SolarSystemZoomCommand) -> Void
+    var onFramePresented: (UUID) -> Void
 
-    init(onSolarSystemZoom: @escaping (SolarSystemZoomCommand) -> Void) {
+    init(
+      onSolarSystemZoom: @escaping (SolarSystemZoomCommand) -> Void,
+      onFramePresented: @escaping (UUID) -> Void
+    ) {
       self.onSolarSystemZoom = onSolarSystemZoom
+      self.onFramePresented = onFramePresented
     }
 
     func userContentController(
       _ userContentController: WKUserContentController,
       didReceive message: WKScriptMessage
     ) {
+      if message.name == "chartFramePresented",
+         let rawFrameID = message.body as? String,
+         let frameID = UUID(uuidString: rawFrameID) {
+        onFramePresented(frameID)
+        return
+      }
       guard message.name == "solarSystemZoom",
             let body = message.body as? [String: Any] else { return }
       if body["reset"] as? Bool == true {
@@ -943,13 +980,18 @@ struct SVGPreview: NSViewRepresentable {
   }
 
   func makeCoordinator() -> Coordinator {
-    Coordinator(onSolarSystemZoom: onSolarSystemZoom)
+    Coordinator(
+      onSolarSystemZoom: onSolarSystemZoom,
+      onFramePresented: onFramePresented)
   }
 
   func makeNSView(context: Context) -> ChartWebView {
     let configuration = WKWebViewConfiguration()
     configuration.userContentController.add(context.coordinator, name: "solarSystemZoom")
+    configuration.userContentController.add(context.coordinator, name: "chartFramePresented")
     let webView = ChartWebView(frame: .zero, configuration: configuration)
+    webView.navigationDelegate = webView
+    webView.onFramePresented = context.coordinator.onFramePresented
     webView.setValue(false, forKey: "drawsBackground")
     webView.allowsMagnification = false
     webView.clipboardSVG = clipboardSVG
@@ -958,6 +1000,8 @@ struct SVGPreview: NSViewRepresentable {
 
   func updateNSView(_ webView: ChartWebView, context: Context) {
     context.coordinator.onSolarSystemZoom = onSolarSystemZoom
+    context.coordinator.onFramePresented = onFramePresented
+    webView.onFramePresented = onFramePresented
     webView.clipboardSVG = clipboardSVG
     webView.displayChart(svg, id: chartID)
     webView.setTooltipsEnabled(tooltipsEnabled)
@@ -966,6 +1010,8 @@ struct SVGPreview: NSViewRepresentable {
   static func dismantleNSView(_ webView: ChartWebView, coordinator: Coordinator) {
     webView.configuration.userContentController.removeScriptMessageHandler(
       forName: "solarSystemZoom")
+    webView.configuration.userContentController.removeScriptMessageHandler(
+      forName: "chartFramePresented")
   }
 }
 
@@ -973,6 +1019,7 @@ struct ChartImageView: View {
   let chart: RenderedChart
   let tooltipsEnabled: Bool
   let onSolarSystemZoom: (SolarSystemZoomCommand) -> Void
+  let onFramePresented: (UUID) -> Void
 
   var body: some View {
     SVGPreview(
@@ -980,7 +1027,8 @@ struct ChartImageView: View {
       svg: chart.svg,
       clipboardSVG: chart.engineSVG,
       tooltipsEnabled: tooltipsEnabled,
-      onSolarSystemZoom: onSolarSystemZoom)
+      onSolarSystemZoom: onSolarSystemZoom,
+      onFramePresented: onFramePresented)
       .background(Color(nsColor: .windowBackgroundColor))
       .accessibilityLabel(
         "\(chart.request.style.rawValue) for \(chart.result.metadata.place.displayName), " +
@@ -1473,6 +1521,20 @@ struct AnimationControlsView: View {
         .opacity(model.isAnimationRendering ? 1 : 0)
         .accessibilityHidden(!model.isAnimationRendering)
         .help("Rendering the next animation frame")
+
+      Text(model.measuredAnimationFPS.map {
+        String(format: "%.0f fps", locale: Locale(identifier: "en_US_POSIX"), $0)
+      } ?? "— fps")
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(.secondary)
+        .frame(width: 50, alignment: .trailing)
+        .opacity(model.isAnimating ? 1 : 0)
+        .help("Frames actually presented, averaged over the last second")
+        .accessibilityHidden(!model.isAnimating)
+        .accessibilityLabel(
+          model.measuredAnimationFPS.map {
+            String(format: "Actual animation rate %.1f frames per second", $0)
+          } ?? "Actual animation rate not measured")
     }
     .padding(.horizontal, 16)
     .frame(height: 42)
@@ -1523,13 +1585,21 @@ struct ChartDetailView: View {
         if let chart = model.generatedChart {
           switch model.selectedResult {
           case .chart:
-            ChartImageView(chart: chart, tooltipsEnabled: !model.isAnimating) { command in
-              model.queueSolarSystemZoom(command)
-            }
+            ChartImageView(
+              chart: chart,
+              tooltipsEnabled: !model.isAnimating,
+              onSolarSystemZoom: { command in model.queueSolarSystemZoom(command) },
+              onFramePresented: { frameID in
+                model.recordPresentedAnimationFrame(frameID)
+              })
           case .positions:
             PositionsResultView(result: chart.result)
+              .id(chart.id)
+              .onAppear { model.recordPresentedAnimationFrame(chart.id) }
           case .aspects:
             AspectsResultView(result: chart.result)
+              .id(chart.id)
+              .onAppear { model.recordPresentedAnimationFrame(chart.id) }
           }
         } else if model.isWorking {
           ProgressView("Calculating your chart…")

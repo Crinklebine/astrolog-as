@@ -50,11 +50,20 @@ enum SolarSystemZoomAnnotator {
 }
 
 enum SVGDocumentUpdater {
-  static func replacementJavaScript(for svg: String) throws -> String {
+  static func replacementJavaScript(for svg: String, frameID: UUID? = nil) throws -> String {
     let encoded = try JSONSerialization.data(withJSONObject: [svg])
     guard let json = String(data: encoded, encoding: .utf8) else {
       throw SolarSystemZoomError.invalidSVG
     }
+    let presentationNotification = frameID.map { frameID in
+      #"""
+      requestAnimationFrame(() => {
+        if (document.documentElement === nextRoot) {
+          window.webkit?.messageHandlers?.chartFramePresented?.postMessage("\#(frameID.uuidString)");
+        }
+      });
+      """#
+    } ?? ""
     return #"""
     (() => {
       const markup = \#(json)[0];
@@ -67,6 +76,7 @@ enum SVGDocumentUpdater {
       }
       document.documentElement.replaceWith(nextRoot);
       scripts.forEach(source => window.eval(source));
+      \#(presentationNotification)
     })();
     """#
   }

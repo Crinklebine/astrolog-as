@@ -333,6 +333,20 @@ enum AstrologChartResultTests {
         "sixty-frame animation interval changed")
       expect(ChartAnimationRate.maximum.minimumFrameInterval == 0,
              "maximum animation is unexpectedly throttled")
+
+      var meter = AnimationFrameRateMeter()
+      var measuredRate: Double?
+      for frame in 0...30 {
+        measuredRate = meter.recordPresentation(at: Double(frame) / 30.0) ?? measuredRate
+      }
+      near(
+        measuredRate ?? 0,
+        30,
+        tolerance: 0.000_001,
+        "rolling presentation counter does not measure thirty frames per second")
+      meter.reset()
+      expect(meter.recordPresentation(at: 10) == nil,
+             "reset frame-rate meter reported a rate before one second elapsed")
     }
 
     test("Solar System SVG requests engine scale changes") {
@@ -366,6 +380,15 @@ enum AstrologChartResultTests {
              "SVG replacement does not restore chart interactions")
       expect(updateScript.contains("nextRoot.dataset.astrologTooltipsDisabled"),
              "SVG replacement does not preserve animation tooltip suppression")
+      let frameID = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+      let measuredUpdateScript = try SVGDocumentUpdater.replacementJavaScript(
+        for: annotated, frameID: frameID)
+      expect(measuredUpdateScript.contains("chartFramePresented"),
+             "SVG replacement does not report presented animation frames")
+      expect(measuredUpdateScript.contains(frameID.uuidString),
+             "SVG presentation report lost its frame identifier")
+      expect(measuredUpdateScript.contains("document.documentElement === nextRoot"),
+             "superseded SVG frames can be counted as visibly presented")
     }
 
     test("Wheel rendering uses the FLTK elemental palette") {
