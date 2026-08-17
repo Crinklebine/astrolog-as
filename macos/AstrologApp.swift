@@ -618,20 +618,42 @@ final class ChartViewModel: ObservableObject {
     direction: ChartAnimationDirection,
     revision: Int
   ) async {
+    var isFirstFrame = true
     while !Task.isCancelled, revision == animationRevision {
-      let frameStarted = Date()
+      let frameStarted: Date
+      if animationRate == .realTime, !isFirstFrame {
+        guard let boundary = animationRate.nextRealTimeBoundary(after: Date()) else { break }
+        do {
+          let delay = max(0, boundary.timeIntervalSinceNow)
+          try await Task.sleep(
+            nanoseconds: UInt64((delay * 1_000_000_000).rounded()))
+        } catch {
+          break
+        }
+        guard revision == animationRevision, !Task.isCancelled else { break }
+        let lateness = Date().timeIntervalSince(boundary)
+        if lateness < 0 || lateness >= 1 {
+          continue
+        }
+        frameStarted = boundary
+      } else {
+        frameStarted = Date()
+      }
       guard await renderAnimationFrame(
         direction: direction,
         revision: revision,
         currentInstant: frameStarted) else { break }
-      let remainingDelay = animationRate.minimumFrameInterval
-        - Date().timeIntervalSince(frameStarted)
-      if remainingDelay > 0 {
-        do {
-          try await Task.sleep(
-            nanoseconds: UInt64((remainingDelay * 1_000_000_000).rounded()))
-        } catch {
-          break
+      isFirstFrame = false
+      if animationRate != .realTime {
+        let remainingDelay = animationRate.minimumFrameInterval
+          - Date().timeIntervalSince(frameStarted)
+        if remainingDelay > 0 {
+          do {
+            try await Task.sleep(
+              nanoseconds: UInt64((remainingDelay * 1_000_000_000).rounded()))
+          } catch {
+            break
+          }
         }
       }
     }

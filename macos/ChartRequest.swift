@@ -277,6 +277,8 @@ enum ChartAnimationStep: String, CaseIterable, Identifiable {
 }
 
 enum ChartAnimationRate: String, CaseIterable, Identifiable {
+  static let realTimeInterval: TimeInterval = 10
+
   case realTime = "Real-time"
   case one = "1 fps"
   case two = "2 fps"
@@ -294,7 +296,7 @@ enum ChartAnimationRate: String, CaseIterable, Identifiable {
 
   var minimumFrameInterval: TimeInterval {
     switch self {
-    case .realTime: return 10
+    case .realTime: return Self.realTimeInterval
     case .one: return 1
     case .two: return 0.5
     case .five: return 0.2
@@ -303,6 +305,14 @@ enum ChartAnimationRate: String, CaseIterable, Identifiable {
     case .sixty: return 1.0 / 60.0
     case .maximum: return 0
     }
+  }
+
+  func nextRealTimeBoundary(after instant: Date) -> Date? {
+    guard self == .realTime else { return nil }
+    let seconds = instant.timeIntervalSince1970
+    guard seconds.isFinite else { return nil }
+    let boundary = (floor(seconds / Self.realTimeInterval) + 1) * Self.realTimeInterval
+    return Date(timeIntervalSince1970: boundary)
   }
 
   func nextInstant(

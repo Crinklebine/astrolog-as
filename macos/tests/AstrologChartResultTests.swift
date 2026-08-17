@@ -319,6 +319,20 @@ enum AstrologChartResultTests {
       expect(ChartAnimationRate.realTime.minimumFrameInterval == 10,
              "real-time animation does not refresh every ten seconds")
       let sampledNow = try parseISO("2026-03-07T17:00:07Z")
+      let nextBoundary = try parseISO("2026-03-07T17:00:10Z")
+      let finalBoundary = try parseISO("2026-03-07T17:00:50Z")
+      let nextMinute = try parseISO("2026-03-07T17:01:00Z")
+      expect(
+        ChartAnimationRate.realTime.nextRealTimeBoundary(after: sampledNow) ==
+          nextBoundary,
+        "real-time animation did not align to the next ten-second boundary")
+      expect(
+        ChartAnimationRate.realTime.nextRealTimeBoundary(
+          after: finalBoundary) == nextMinute,
+        "real-time animation did not align across the next minute")
+      expect(
+        ChartAnimationRate.five.nextRealTimeBoundary(after: sampledNow) == nil,
+        "ordinary animation unexpectedly scheduled a real-time boundary")
       expect(
         ChartAnimationRate.realTime.nextInstant(
           after: start, step: .day, direction: .backward,
