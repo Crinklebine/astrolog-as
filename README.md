@@ -10,9 +10,9 @@ engine that calculates and renders each chart.
 ## Download and install
 
 The current release is
-[Astrolog-AS 8.00 (build 800.32)](https://github.com/Crinklebine/astrolog-as/releases/tag/v8.00-as.32).
+[Astrolog-AS 8.00 (build 800.33)](https://github.com/Crinklebine/astrolog-as/releases/tag/v8.00-as.33).
 Download the
-[Apple Silicon DMG](https://github.com/Crinklebine/astrolog-as/releases/download/v8.00-as.32/Astrolog-AS-800.32-arm64.dmg).
+[Apple Silicon DMG](https://github.com/Crinklebine/astrolog-as/releases/download/v8.00-as.33/Astrolog-AS-800.33-arm64.dmg).
 
 Astrolog-AS requires an Apple Silicon Mac running macOS 14 Sonoma or later.
 
@@ -40,7 +40,8 @@ open it.
   increments, and playback rates from 1 to 60 frames per second or unthrottled.
   The default is 5 frames per second, an actual frame-rate counter appears
   during playback, and Chart, Positions, and Aspects remain synchronized to
-  each animated frame.
+  each animated frame. Dedicated forward, reverse, and Stop controls keep the
+  transport state clear and visually stable during rendering.
 - A real-time playback mode aligned to the wall clock at `:00`, `:10`, `:20`,
   `:30`, `:40`, and `:50`, with automatic recovery after sleep and no
   accumulated timer drift.
