@@ -540,12 +540,9 @@ final class ChartViewModel: ObservableObject {
     clearSolarSystemChartCache()
   }
 
-  func toggleAnimation(_ direction: ChartAnimationDirection) {
+  func playAnimation(_ direction: ChartAnimationDirection) {
     guard animationRate.supportsTimelineStepping || direction == .forward else { return }
-    if animationDirection == direction {
-      pauseAnimation()
-      return
-    }
+    guard !isAnimating else { return }
     startAnimation(direction)
   }
 
@@ -553,18 +550,18 @@ final class ChartViewModel: ObservableObject {
     guard let direction = animationDirection else { return }
     let updatedDirection: ChartAnimationDirection =
       animationRate == .realTime ? .forward : direction
-    pauseAnimation(updateStatus: false)
+    stopAnimation(updateStatus: false)
     startAnimation(updatedDirection)
   }
 
-  func pauseAnimation(updateStatus: Bool = true) {
+  func stopAnimation(updateStatus: Bool = true) {
     animationRevision += 1
     animationTask?.cancel()
     animationTask = nil
     animationDirection = nil
     isAnimationRendering = false
     if updateStatus, generatedChart != nil {
-      statusText = "Animation paused"
+      statusText = "Animation stopped"
     }
   }
 
@@ -583,7 +580,7 @@ final class ChartViewModel: ObservableObject {
   func stepAnimation(_ direction: ChartAnimationDirection) async {
     guard generatedChart != nil, !isWorking, !isUpdatingAppearance,
           !isAnimationRendering, animationRate.supportsTimelineStepping else { return }
-    pauseAnimation(updateStatus: false)
+    stopAnimation(updateStatus: false)
     animationRevision += 1
     let revision = animationRevision
     _ = await renderAnimationFrame(direction: direction, revision: revision)
@@ -593,7 +590,7 @@ final class ChartViewModel: ObservableObject {
     guard let chart = generatedChart, !isWorking, !isUpdatingAppearance,
           !isAnimationRendering,
           animationRate.supportsTimelineStepping || direction == .forward else { return }
-    pauseAnimation(updateStatus: false)
+    stopAnimation(updateStatus: false)
     useCurrentMoment = animationRate == .realTime
     chartDate = chart.request.moment.instant
     cacheAnimationFrame(chart)
@@ -759,7 +756,7 @@ final class ChartViewModel: ObservableObject {
   }
 
   private func resetAnimationState() {
-    pauseAnimation(updateStatus: false)
+    stopAnimation(updateStatus: false)
     clearAnimationFrameCache(keeping: generatedChart)
   }
 
@@ -1505,34 +1502,40 @@ struct AnimationControlsView: View {
         .allowsHitTesting(!model.isAnimationRendering)
 
         Button {
-          model.toggleAnimation(.backward)
+          model.playAnimation(.backward)
         } label: {
-          Label("Play backward", systemImage: "backward.fill")
+          Label {
+            Text("Play backward")
+          } icon: {
+            Image(systemName: "play.fill")
+              .scaleEffect(x: -1, y: 1)
+          }
             .labelStyle(.iconOnly)
         }
-        .help(model.animationDirection == .backward ? "Pause" : "Play backward")
-        .disabled(!model.animationRate.supportsTimelineStepping)
-        .foregroundStyle(
-          model.animationDirection == .backward ? Color.accentColor : Color.primary)
+        .help("Play backward")
+        .disabled(
+          !model.animationRate.supportsTimelineStepping ||
+          model.isAnimating)
+        .allowsHitTesting(!model.isAnimationRendering)
 
         Button {
-          model.pauseAnimation()
+          model.stopAnimation()
         } label: {
-          Label("Pause", systemImage: "pause.fill")
+          Label("Stop", systemImage: "stop.fill")
             .labelStyle(.iconOnly)
         }
-        .help("Pause animation")
+        .help("Stop animation")
         .disabled(!model.isAnimating)
 
         Button {
-          model.toggleAnimation(.forward)
+          model.playAnimation(.forward)
         } label: {
-          Label("Play forward", systemImage: "forward.fill")
+          Label("Play forward", systemImage: "play.fill")
             .labelStyle(.iconOnly)
         }
-        .help(model.animationDirection == .forward ? "Pause" : "Play forward")
-        .foregroundStyle(
-          model.animationDirection == .forward ? Color.accentColor : Color.primary)
+        .help(model.animationRate == .realTime ? "Start real-time updates" : "Play forward")
+        .disabled(model.isAnimating)
+        .allowsHitTesting(!model.isAnimationRendering)
 
         Button {
           Task { await model.stepAnimation(.forward) }
